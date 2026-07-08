@@ -1,10 +1,10 @@
 import Navbar from "./components/Navbar"
 import Hero from "./components/Hero"
+import Features from "./components/Features"
 
 function App() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
-
       {/* Background */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-0 h-[500px] w-[500px] -translate-x-1/2 rounded-full bg-cyan-400/20 blur-[140px]" />
@@ -14,7 +14,7 @@ function App() {
 
       <Navbar />
       <Hero />
-
+      <Features />
     </main>
   )
 }
