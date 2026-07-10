@@ -22,7 +22,7 @@ export default function Hero() {
           to="/tools/csv-to-dxf"
           className="rounded-full bg-cyan-400 px-8 py-3 font-semibold text-slate-900 transition hover:scale-105 hover:bg-cyan-300"
         >
-          Start with CSV to DXF
+          Start with CSV / TXT to DXF
         </Link>
 
         <a

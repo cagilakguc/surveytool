@@ -35,7 +35,7 @@ export default function Footer() {
             className="transition hover:text-white"
             to="/tools/csv-to-dxf"
           >
-            CSV to DXF
+            CSV / TXT to DXF
           </Link>
           <Link
             className="transition hover:text-white"
