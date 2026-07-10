@@ -39,14 +39,23 @@ function calculateBounds(points: PlanPoint[]): Bounds | null {
     return null
   }
 
-  const eastings = points.map((point) => point.easting)
-  const northings = points.map((point) => point.northing)
+  let minEasting = Number.POSITIVE_INFINITY
+  let maxEasting = Number.NEGATIVE_INFINITY
+  let minNorthing = Number.POSITIVE_INFINITY
+  let maxNorthing = Number.NEGATIVE_INFINITY
+
+  points.forEach((point) => {
+    minEasting = Math.min(minEasting, point.easting)
+    maxEasting = Math.max(maxEasting, point.easting)
+    minNorthing = Math.min(minNorthing, point.northing)
+    maxNorthing = Math.max(maxNorthing, point.northing)
+  })
 
   return {
-    minEasting: Math.min(...eastings),
-    maxEasting: Math.max(...eastings),
-    minNorthing: Math.min(...northings),
-    maxNorthing: Math.max(...northings),
+    minEasting,
+    maxEasting,
+    minNorthing,
+    maxNorthing,
   }
 }
 
@@ -108,19 +117,21 @@ export default function LandXmlPreview({
     const points: PlanPoint[] = []
 
     if (showSurfaces || showVertices) {
-      visibleSurfaces.forEach((surface) =>
-        points.push(...getSurfacePoints(surface)),
-      )
+      visibleSurfaces.forEach((surface) => {
+        getSurfacePoints(surface).forEach((point) =>
+          points.push(point),
+        )
+      })
     }
 
     if (showAlignments) {
-      document.alignments.forEach((alignment) =>
-        points.push(...alignment.points),
-      )
+      document.alignments.forEach((alignment) => {
+        alignment.points.forEach((point) => points.push(point))
+      })
     }
 
     if (showCogoPoints) {
-      points.push(...document.cogoPoints)
+      document.cogoPoints.forEach((point) => points.push(point))
     }
 
     return calculateBounds(points)
@@ -247,11 +258,12 @@ export default function LandXmlPreview({
 
                 return (
                   <g key={surface.name}>
-                    {surface.faces.map((face, faceIndex) => {
-                      if (faceIndex % faceStep !== 0) {
-                        return null
-                      }
-
+                    {surface.faces
+                      .filter(
+                        (_, faceIndex) =>
+                          faceIndex % faceStep === 0,
+                      )
+                      .map((face, faceIndex) => {
                       const facePoints = face
                         .map((id) => surface.points[id])
                         .filter(
@@ -295,7 +307,7 @@ export default function LandXmlPreview({
                           strokeWidth="0.7"
                         />
                       )
-                    })}
+                      })}
                   </g>
                 )
               })}
@@ -314,23 +326,24 @@ export default function LandXmlPreview({
 
                 return (
                   <g key={`${surface.name}-vertices`}>
-                    {points.map((point, pointIndex) => {
-                      if (pointIndex % pointStep !== 0) {
-                        return null
-                      }
-
-                      const projected = projectPoint(point, bounds)
-                      return (
-                        <circle
-                          key={`${surface.name}-point-${pointIndex}`}
-                          cx={projected.x}
-                          cy={projected.y}
-                          r="1.8"
-                          fill={colour}
-                          fillOpacity="0.9"
-                        />
+                    {points
+                      .filter(
+                        (_, pointIndex) =>
+                          pointIndex % pointStep === 0,
                       )
-                    })}
+                      .map((point, pointIndex) => {
+                        const projected = projectPoint(point, bounds)
+                        return (
+                          <circle
+                            key={`${surface.name}-point-${pointIndex}`}
+                            cx={projected.x}
+                            cy={projected.y}
+                            r="1.8"
+                            fill={colour}
+                            fillOpacity="0.9"
+                          />
+                        )
+                      })}
                   </g>
                 )
               })}

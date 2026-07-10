@@ -257,9 +257,23 @@ function parseSurface(surface: Element, index: number) {
         .map((ids) => [ids[0], ids[1], ids[2]])
     : []
 
-  const elevations = Object.values(points)
-    .map((point) => point.elevation)
-    .filter((value): value is number => value !== null)
+  let minElevation: number | null = null
+  let maxElevation: number | null = null
+
+  Object.values(points).forEach((point) => {
+    if (point.elevation === null) {
+      return
+    }
+
+    minElevation =
+      minElevation === null
+        ? point.elevation
+        : Math.min(minElevation, point.elevation)
+    maxElevation =
+      maxElevation === null
+        ? point.elevation
+        : Math.max(maxElevation, point.elevation)
+  })
 
   return {
     name:
@@ -267,10 +281,8 @@ function parseSurface(surface: Element, index: number) {
       `Surface ${index + 1}`,
     points,
     faces,
-    minElevation:
-      elevations.length > 0 ? Math.min(...elevations) : null,
-    maxElevation:
-      elevations.length > 0 ? Math.max(...elevations) : null,
+    minElevation,
+    maxElevation,
   } satisfies LandXmlSurface
 }
 
