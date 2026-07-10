@@ -4,6 +4,7 @@ import Home from "./pages/Home"
 import Dashboard from "./pages/Dashboard"
 import CsvToDxf from "./pages/CsvToDxf"
 import LandXmlViewer from "./pages/LandXmlViewer"
+import SurfaceCompare from "./pages/SurfaceCompare"
 import NotFound from "./pages/NotFound"
 
 function App() {
@@ -24,6 +25,10 @@ function App() {
           <Route
             path="/tools/landxml-viewer"
             element={<LandXmlViewer />}
+          />
+          <Route
+            path="/tools/surface-compare"
+            element={<SurfaceCompare />}
           />
           <Route path="*" element={<NotFound />} />
         </Routes>
