@@ -31,6 +31,7 @@ const features: Feature[] = [
     title: "LandXML Viewer",
     description:
       "Open and inspect LandXML files instantly without desktop software.",
+    to: "/tools/landxml-viewer",
   },
   {
     icon: Mountain,
