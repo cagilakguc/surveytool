@@ -12,6 +12,7 @@ import {
 
 import DxfExportSettings from "../components/DxfExportSettings"
 import type { DxfSettings } from "../components/DxfExportSettings"
+import PageSeo from "../components/PageSeo"
 
 type ColumnMapping = {
   pointId: number
@@ -470,6 +471,12 @@ export default function CsvToDxf() {
 
   return (
     <div className="relative z-10 min-h-screen px-6 py-24">
+      <PageSeo
+        title="CSV to DXF Converter Online | SurveyTool.io"
+        description="Convert survey CSV point files to DXF online. Map point ID, easting, northing, elevation and feature codes, then download a CAD-ready DXF file."
+        canonicalUrl="https://surveytool.io/tools/csv-to-dxf"
+      />
+
       <div className="mx-auto max-w-6xl">
         <Link
           to="/"
