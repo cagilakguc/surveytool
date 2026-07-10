@@ -1,24 +1,24 @@
 import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
+import { Link } from "react-router-dom"
 import {
-ArrowLeft,
-CheckCircle2,
-Download,
-FileWarning,
-Layers3,
-Upload,
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  FileWarning,
+  Layers3,
+  Upload,
 } from "lucide-react"
 
 import DxfExportSettings from "../components/DxfExportSettings"
 import type { DxfSettings } from "../components/DxfExportSettings"
-import { Link } from "react-router-dom"
 
 type ColumnMapping = {
   pointId: number
   easting: number
   northing: number
-  elevation: number
-  code: number
+  elevation: number | null
+  code: number | null
 }
 
 type MappingKey = keyof ColumnMapping
@@ -28,9 +28,15 @@ type SurveyPoint = {
   pointId: string
   easting: number
   northing: number
-  elevation: number
+  elevation: number | null
   code: string
   valid: boolean
+}
+
+type MappingField = {
+  key: MappingKey
+  label: string
+  optional: boolean
 }
 
 function sanitizeLayerName(code: string) {
@@ -46,11 +52,23 @@ function cleanDxfText(value: string) {
   return value.replace(/[\r\n]+/g, " ").trim()
 }
 
+function parseNumber(value: string | undefined) {
+  const trimmed = value?.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  const number = Number(trimmed)
+
+  return Number.isFinite(number) ? number : null
+}
+
 function getPointLayer(
   point: SurveyPoint,
   settings: DxfSettings,
 ) {
-  if (settings.layerByCode) {
+  if (settings.layerByCode && point.code.trim()) {
     return sanitizeLayerName(point.code)
   }
 
@@ -85,7 +103,9 @@ function createDxf(
     z: number,
     text: string,
   ) {
-    if (!text.trim()) return
+    if (!text.trim()) {
+      return
+    }
 
     add(0, "TEXT")
     add(8, layer)
@@ -126,6 +146,7 @@ function createDxf(
 
   validPoints.forEach((point) => {
     const layer = getPointLayer(point, settings)
+    const elevation = point.elevation ?? 0
 
     const offset = Math.max(
       settings.textHeight * 1.5,
@@ -137,7 +158,7 @@ function createDxf(
       add(8, layer)
       add(10, point.easting)
       add(20, point.northing)
-      add(30, point.elevation)
+      add(30, elevation)
     }
 
     if (settings.includePointId) {
@@ -145,27 +166,33 @@ function createDxf(
         layer,
         point.easting + offset,
         point.northing + offset,
-        point.elevation,
+        elevation,
         point.pointId,
       )
     }
 
-    if (settings.includeElevation) {
+    if (
+      settings.includeElevation &&
+      point.elevation !== null
+    ) {
       addText(
         layer,
         point.easting + offset,
         point.northing - offset,
-        point.elevation,
+        elevation,
         point.elevation.toFixed(3),
       )
     }
 
-    if (settings.includeCode) {
+    if (
+      settings.includeCode &&
+      point.code.trim()
+    ) {
       addText(
         layer,
         point.easting + offset,
         point.northing - offset * 2.5,
-        point.elevation,
+        elevation,
         point.code,
       )
     }
@@ -186,8 +213,8 @@ export default function CsvToDxf() {
     pointId: 0,
     easting: 1,
     northing: 2,
-    elevation: 3,
-    code: 4,
+    elevation: null,
+    code: null,
   })
 
   const [settings, setSettings] = useState<DxfSettings>({
@@ -217,7 +244,9 @@ export default function CsvToDxf() {
   ) {
     const file = event.target.files?.[0]
 
-    if (!file) return
+    if (!file) {
+      return
+    }
 
     setFileName(file.name)
 
@@ -226,7 +255,9 @@ export default function CsvToDxf() {
     reader.onload = () => {
       const text = reader.result
 
-      if (typeof text !== "string") return
+      if (typeof text !== "string") {
+        return
+      }
 
       const parsedRows = text
         .split(/\r?\n/)
@@ -239,8 +270,18 @@ export default function CsvToDxf() {
         parsedRows.length > 0 &&
         looksLikeHeader(parsedRows[0])
 
+      const columnCount = parsedRows[0]?.length ?? 0
+
       setHasHeader(headerDetected)
       setRows(parsedRows)
+
+      setMapping({
+        pointId: 0,
+        easting: columnCount > 1 ? 1 : 0,
+        northing: columnCount > 2 ? 2 : 0,
+        elevation: columnCount > 3 ? 3 : null,
+        code: columnCount > 4 ? 4 : null,
+      })
     }
 
     reader.readAsText(file)
@@ -250,9 +291,12 @@ export default function CsvToDxf() {
     key: MappingKey,
     value: string,
   ) {
+    const nextValue =
+      value === "" ? null : Number(value)
+
     setMapping((current) => ({
       ...current,
-      [key]: Number(value),
+      [key]: nextValue,
     }))
   }
 
@@ -266,6 +310,7 @@ export default function CsvToDxf() {
 
   function getColumnExample(index: number) {
     const exampleRowIndex = hasHeader ? 1 : 0
+
     return rows[exampleRowIndex]?.[index] ?? ""
   }
 
@@ -288,18 +333,32 @@ export default function CsvToDxf() {
       const pointId =
         row[mapping.pointId]?.trim() ?? ""
 
-      const easting = Number(row[mapping.easting])
-      const northing = Number(row[mapping.northing])
-      const elevation = Number(row[mapping.elevation])
+      const easting =
+        parseNumber(row[mapping.easting]) ??
+        Number.NaN
+
+      const northing =
+        parseNumber(row[mapping.northing]) ??
+        Number.NaN
+
+      const elevation =
+        mapping.elevation === null
+          ? null
+          : parseNumber(row[mapping.elevation])
 
       const code =
-        row[mapping.code]?.trim() ?? ""
+        mapping.code === null
+          ? ""
+          : row[mapping.code]?.trim() ?? ""
 
       const valid =
         pointId.length > 0 &&
         Number.isFinite(easting) &&
         Number.isFinite(northing) &&
-        Number.isFinite(elevation)
+        (
+          mapping.elevation === null ||
+          elevation !== null
+        )
 
       return {
         rowNumber: index + (hasHeader ? 2 : 1),
@@ -327,11 +386,23 @@ export default function CsvToDxf() {
       .filter((code) => code.length > 0),
   )
 
+  const hasElevation =
+    mapping.elevation !== null
+
+  const hasCode =
+    mapping.code !== null
+
   const hasExportContent =
     settings.includePoint ||
     settings.includePointId ||
-    settings.includeElevation ||
-    settings.includeCode
+    (
+      settings.includeElevation &&
+      hasElevation
+    ) ||
+    (
+      settings.includeCode &&
+      hasCode
+    )
 
   function handleDownloadDxf() {
     if (
@@ -369,27 +440,45 @@ export default function CsvToDxf() {
     }, 1000)
   }
 
-  const mappingFields: {
-    key: MappingKey
-    label: string
-  }[] = [
-    { key: "pointId", label: "Point ID" },
-    { key: "easting", label: "Easting" },
-    { key: "northing", label: "Northing" },
-    { key: "elevation", label: "Elevation" },
-    { key: "code", label: "Feature Code" },
+  const mappingFields: MappingField[] = [
+    {
+      key: "pointId",
+      label: "Point ID",
+      optional: false,
+    },
+    {
+      key: "easting",
+      label: "Easting",
+      optional: false,
+    },
+    {
+      key: "northing",
+      label: "Northing",
+      optional: false,
+    },
+    {
+      key: "elevation",
+      label: "Elevation",
+      optional: true,
+    },
+    {
+      key: "code",
+      label: "Feature Code",
+      optional: true,
+    },
   ]
 
   return (
     <div className="relative z-10 min-h-screen px-6 py-24">
       <div className="mx-auto max-w-6xl">
         <Link
-  to="/"
-  className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-cyan-300"
->
-  <ArrowLeft size={18} />
-  Back to home
-</Link>
+          to="/"
+          className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-cyan-300"
+        >
+          <ArrowLeft size={18} />
+          Back to home
+        </Link>
+
         <div className="mb-10">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">
             SurveyTool
@@ -443,8 +532,9 @@ export default function CsvToDxf() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-400">
-                Check that each survey field is matched
-                to the correct CSV column.
+                Elevation and Feature Code are optional.
+                Select “Not included” when they are not
+                present in the CSV.
               </p>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -455,10 +545,17 @@ export default function CsvToDxf() {
                   >
                     <span className="mb-2 block text-sm text-slate-300">
                       {field.label}
+                      {field.optional && (
+                        <span className="ml-2 text-slate-500">
+                          Optional
+                        </span>
+                      )}
                     </span>
 
                     <select
-                      value={mapping[field.key]}
+                      value={
+                        mapping[field.key] ?? ""
+                      }
                       onChange={(event) =>
                         updateMapping(
                           field.key,
@@ -467,6 +564,12 @@ export default function CsvToDxf() {
                       }
                       className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-400"
                     >
+                      {field.optional && (
+                        <option value="">
+                          Not included
+                        </option>
+                      )}
+
                       {columnIndexes.map((index) => (
                         <option
                           key={index}
@@ -554,9 +657,11 @@ export default function CsvToDxf() {
 
             <div className="mt-8">
               <DxfExportSettings
-                settings={settings}
-                onChange={setSettings}
-              />
+  settings={settings}
+  onChange={setSettings}
+  hasElevation={hasElevation}
+  hasCode={hasCode}
+/>
             </div>
 
             <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -572,9 +677,24 @@ export default function CsvToDxf() {
                     settings.
                   </p>
 
+                  {!hasElevation && (
+                    <p className="mt-2 text-sm text-cyan-300">
+                      No elevation selected. Points will
+                      be exported at Z = 0.
+                    </p>
+                  )}
+
+                  {!hasCode && (
+                    <p className="mt-2 text-sm text-cyan-300">
+                      No feature code selected. Points
+                      will use the SURVEY_POINTS layer.
+                    </p>
+                  )}
+
                   {!hasExportContent && (
                     <p className="mt-2 text-sm text-amber-300">
-                      Select at least one export option.
+                      Select at least one available export
+                      option.
                     </p>
                   )}
                 </div>

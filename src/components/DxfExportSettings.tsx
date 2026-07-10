@@ -10,6 +10,8 @@ type DxfSettings = {
 type DxfExportSettingsProps = {
   settings: DxfSettings
   onChange: (settings: DxfSettings) => void
+  hasElevation: boolean
+  hasCode: boolean
 }
 
 export type { DxfSettings }
@@ -17,6 +19,8 @@ export type { DxfSettings }
 export default function DxfExportSettings({
   settings,
   onChange,
+  hasElevation,
+  hasCode,
 }: DxfExportSettingsProps) {
   function updateSetting<Key extends keyof DxfSettings>(
     key: Key,
@@ -27,6 +31,12 @@ export default function DxfExportSettings({
       [key]: value,
     })
   }
+
+  const activeCard =
+    "flex items-center justify-between gap-6 rounded-2xl border border-white/10 bg-slate-950/40 p-4"
+
+  const disabledCard =
+    "flex items-center justify-between gap-6 rounded-2xl border border-white/5 bg-slate-950/20 p-4 opacity-50"
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -39,7 +49,7 @@ export default function DxfExportSettings({
       </p>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        <label className={activeCard}>
           <span>
             <span className="block font-medium">
               Point markers
@@ -56,11 +66,11 @@ export default function DxfExportSettings({
             onChange={(event) =>
               updateSetting("includePoint", event.target.checked)
             }
-            className="h-5 w-5 accent-cyan-400"
+            className="h-5 w-5 shrink-0 accent-cyan-400"
           />
         </label>
 
-        <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        <label className={activeCard}>
           <span>
             <span className="block font-medium">
               Point ID labels
@@ -77,70 +87,81 @@ export default function DxfExportSettings({
             onChange={(event) =>
               updateSetting("includePointId", event.target.checked)
             }
-            className="h-5 w-5 accent-cyan-400"
+            className="h-5 w-5 shrink-0 accent-cyan-400"
           />
         </label>
 
-        <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        <label className={hasElevation ? activeCard : disabledCard}>
           <span>
             <span className="block font-medium">
               Elevation labels
             </span>
 
             <span className="mt-1 block text-sm text-slate-400">
-              Add the RL beside each survey point.
+              {hasElevation
+                ? "Add the RL beside each survey point."
+                : "Not available because no elevation column is selected."}
             </span>
           </span>
 
           <input
             type="checkbox"
-            checked={settings.includeElevation}
+            disabled={!hasElevation}
+            checked={
+              hasElevation && settings.includeElevation
+            }
             onChange={(event) =>
               updateSetting("includeElevation", event.target.checked)
             }
-            className="h-5 w-5 accent-cyan-400"
+            className="h-5 w-5 shrink-0 accent-cyan-400 disabled:cursor-not-allowed"
           />
         </label>
 
-        <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        <label className={hasCode ? activeCard : disabledCard}>
           <span>
             <span className="block font-medium">
               Feature code labels
             </span>
 
             <span className="mt-1 block text-sm text-slate-400">
-              Display codes such as RPBC beside points.
+              {hasCode
+                ? "Display codes such as RPBC beside points."
+                : "Not available because no feature-code column is selected."}
             </span>
           </span>
 
           <input
             type="checkbox"
-            checked={settings.includeCode}
+            disabled={!hasCode}
+            checked={hasCode && settings.includeCode}
             onChange={(event) =>
               updateSetting("includeCode", event.target.checked)
             }
-            className="h-5 w-5 accent-cyan-400"
+            className="h-5 w-5 shrink-0 accent-cyan-400 disabled:cursor-not-allowed"
           />
         </label>
 
-        <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        <label className={hasCode ? activeCard : disabledCard}>
           <span>
             <span className="block font-medium">
               Layers by feature code
             </span>
 
             <span className="mt-1 block text-sm text-slate-400">
-              Create separate layers such as RPBC and MH.
+              {hasCode
+                ? "Create separate layers such as RPBC and MH."
+                : "All points will use the SURVEY_POINTS layer."}
             </span>
           </span>
 
           <input
             type="checkbox"
-            checked={settings.layerByCode}
+            disabled={!hasCode}
+            checked={hasCode && settings.layerByCode}
             onChange={(event) =>
               updateSetting("layerByCode", event.target.checked)
             }
-            className="h-5 w-5 accent-cyan-400"
+            className="h-5 w-5 shrink-0 accent-cyan-400 disabled:cursor-not-allowed"
           />
         </label>
 
@@ -161,7 +182,10 @@ export default function DxfExportSettings({
             onChange={(event) =>
               updateSetting(
                 "textHeight",
-                Math.max(0.01, Number(event.target.value) || 0.4),
+                Math.max(
+                  0.01,
+                  Number(event.target.value) || 0.4,
+                ),
               )
             }
             className="mt-4 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-400"
