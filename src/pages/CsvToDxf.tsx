@@ -8,6 +8,9 @@ import {
   Upload,
 } from "lucide-react"
 
+import DxfExportSettings from "../components/DxfExportSettings"
+import type { DxfSettings } from "../components/DxfExportSettings"
+
 type ColumnMapping = {
   pointId: number
   easting: number
@@ -41,12 +44,28 @@ function cleanDxfText(value: string) {
   return value.replace(/[\r\n]+/g, " ").trim()
 }
 
-function createDxf(points: SurveyPoint[]) {
+function getPointLayer(
+  point: SurveyPoint,
+  settings: DxfSettings,
+) {
+  if (settings.layerByCode) {
+    return sanitizeLayerName(point.code)
+  }
+
+  return "SURVEY_POINTS"
+}
+
+function createDxf(
+  points: SurveyPoint[],
+  settings: DxfSettings,
+) {
   const validPoints = points.filter((point) => point.valid)
 
   const layers = Array.from(
     new Set(
-      validPoints.map((point) => sanitizeLayerName(point.code)),
+      validPoints.map((point) =>
+        getPointLayer(point, settings),
+      ),
     ),
   )
 
@@ -55,6 +74,25 @@ function createDxf(points: SurveyPoint[]) {
   function add(code: number, value: string | number) {
     dxf.push(String(code))
     dxf.push(String(value))
+  }
+
+  function addText(
+    layer: string,
+    x: number,
+    y: number,
+    z: number,
+    text: string,
+  ) {
+    if (!text.trim()) return
+
+    add(0, "TEXT")
+    add(8, layer)
+    add(10, x)
+    add(20, y)
+    add(30, z)
+    add(40, settings.textHeight)
+    add(1, cleanDxfText(text))
+    add(7, "STANDARD")
   }
 
   add(0, "SECTION")
@@ -85,22 +123,50 @@ function createDxf(points: SurveyPoint[]) {
   add(2, "ENTITIES")
 
   validPoints.forEach((point) => {
-    const layer = sanitizeLayerName(point.code)
+    const layer = getPointLayer(point, settings)
 
-    add(0, "POINT")
-    add(8, layer)
-    add(10, point.easting)
-    add(20, point.northing)
-    add(30, point.elevation)
+    const offset = Math.max(
+      settings.textHeight * 1.5,
+      0.15,
+    )
 
-    add(0, "TEXT")
-    add(8, layer)
-    add(10, point.easting + 0.35)
-    add(20, point.northing + 0.35)
-    add(30, point.elevation)
-    add(40, 0.4)
-    add(1, cleanDxfText(point.pointId))
-    add(7, "STANDARD")
+    if (settings.includePoint) {
+      add(0, "POINT")
+      add(8, layer)
+      add(10, point.easting)
+      add(20, point.northing)
+      add(30, point.elevation)
+    }
+
+    if (settings.includePointId) {
+      addText(
+        layer,
+        point.easting + offset,
+        point.northing + offset,
+        point.elevation,
+        point.pointId,
+      )
+    }
+
+    if (settings.includeElevation) {
+      addText(
+        layer,
+        point.easting + offset,
+        point.northing - offset,
+        point.elevation,
+        point.elevation.toFixed(3),
+      )
+    }
+
+    if (settings.includeCode) {
+      addText(
+        layer,
+        point.easting + offset,
+        point.northing - offset * 2.5,
+        point.elevation,
+        point.code,
+      )
+    }
   })
 
   add(0, "ENDSEC")
@@ -122,6 +188,15 @@ export default function CsvToDxf() {
     code: 4,
   })
 
+  const [settings, setSettings] = useState<DxfSettings>({
+    includePoint: true,
+    includePointId: true,
+    includeElevation: false,
+    includeCode: false,
+    layerByCode: true,
+    textHeight: 0.4,
+  })
+
   function looksLikeHeader(row: string[]) {
     const joined = row.join(" ").toLowerCase()
 
@@ -135,7 +210,9 @@ export default function CsvToDxf() {
     )
   }
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
     const file = event.target.files?.[0]
 
     if (!file) return
@@ -167,7 +244,10 @@ export default function CsvToDxf() {
     reader.readAsText(file)
   }
 
-  function updateMapping(key: MappingKey, value: string) {
+  function updateMapping(
+    key: MappingKey,
+    value: string,
+  ) {
     setMapping((current) => ({
       ...current,
       [key]: Number(value),
@@ -198,7 +278,9 @@ export default function CsvToDxf() {
   const previewRows = dataRows.slice(0, 10)
 
   const surveyPoints = useMemo<SurveyPoint[]>(() => {
-    const sourceRows = hasHeader ? rows.slice(1) : rows
+    const sourceRows = hasHeader
+      ? rows.slice(1)
+      : rows
 
     return sourceRows.map((row, index) => {
       const pointId =
@@ -243,10 +325,24 @@ export default function CsvToDxf() {
       .filter((code) => code.length > 0),
   )
 
-  function handleDownloadDxf() {
-    if (validPoints.length === 0) return
+  const hasExportContent =
+    settings.includePoint ||
+    settings.includePointId ||
+    settings.includeElevation ||
+    settings.includeCode
 
-    const content = createDxf(validPoints)
+  function handleDownloadDxf() {
+    if (
+      validPoints.length === 0 ||
+      !hasExportContent
+    ) {
+      return
+    }
+
+    const content = createDxf(
+      validPoints,
+      settings,
+    )
 
     const blob = new Blob([content], {
       type: "application/dxf;charset=utf-8",
@@ -296,7 +392,8 @@ export default function CsvToDxf() {
 
           <p className="mt-4 max-w-2xl text-slate-400">
             Upload your survey CSV, map its columns,
-            validate the points and generate a DXF.
+            choose the DXF settings and download the
+            finished drawing.
           </p>
         </div>
 
@@ -446,6 +543,13 @@ export default function CsvToDxf() {
               </div>
             </div>
 
+            <div className="mt-8">
+              <DxfExportSettings
+                settings={settings}
+                onChange={setSettings}
+              />
+            </div>
+
             <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-6">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -454,14 +558,24 @@ export default function CsvToDxf() {
                   </h2>
 
                   <p className="mt-2 text-sm text-slate-400">
-                    Export {validPoints.length} valid points
-                    using feature codes as DXF layers.
+                    Export {validPoints.length} valid
+                    survey points using the selected
+                    settings.
                   </p>
+
+                  {!hasExportContent && (
+                    <p className="mt-2 text-sm text-amber-300">
+                      Select at least one export option.
+                    </p>
+                  )}
                 </div>
 
                 <button
                   type="button"
-                  disabled={validPoints.length === 0}
+                  disabled={
+                    validPoints.length === 0 ||
+                    !hasExportContent
+                  }
                   onClick={handleDownloadDxf}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-cyan-400 px-7 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -487,23 +601,25 @@ export default function CsvToDxf() {
                 </thead>
 
                 <tbody>
-                  {previewRows.map((row, rowIndex) => (
-                    <tr
-                      key={rowIndex}
-                      className="border-t border-white/10"
-                    >
-                      {columnIndexes.map(
-                        (columnIndex) => (
-                          <td
-                            key={columnIndex}
-                            className="whitespace-nowrap px-5 py-4"
-                          >
-                            {row[columnIndex] ?? ""}
-                          </td>
-                        ),
-                      )}
-                    </tr>
-                  ))}
+                  {previewRows.map(
+                    (row, rowIndex) => (
+                      <tr
+                        key={rowIndex}
+                        className="border-t border-white/10"
+                      >
+                        {columnIndexes.map(
+                          (columnIndex) => (
+                            <td
+                              key={columnIndex}
+                              className="whitespace-nowrap px-5 py-4"
+                            >
+                              {row[columnIndex] ?? ""}
+                            </td>
+                          ),
+                        )}
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>
