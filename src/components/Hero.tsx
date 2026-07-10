@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom"
+
 export default function Hero() {
   return (
     <section className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center px-6 pt-20 text-center">
@@ -16,14 +18,20 @@ export default function Hero() {
       </p>
 
       <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-        <button className="rounded-full bg-cyan-400 px-8 py-3 font-semibold text-slate-900 transition hover:scale-105">
+        <Link
+          to="/tools/csv-to-dxf"
+          className="rounded-full bg-cyan-400 px-8 py-3 font-semibold text-slate-900 transition hover:scale-105 hover:bg-cyan-300"
+        >
           Start with CSV to DXF
-        </button>
+        </Link>
 
-        <button className="rounded-full border border-white/15 px-8 py-3 font-semibold transition hover:bg-white/10">
+        <a
+          href="#tools"
+          className="rounded-full border border-white/15 px-8 py-3 font-semibold transition hover:bg-white/10"
+        >
           View Tools
-        </button>
+        </a>
       </div>
     </section>
-  );
+  )
 }

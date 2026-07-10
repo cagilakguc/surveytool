@@ -44,7 +44,9 @@ const features = [
 
 export default function Features() {
   return (
-    <section className="relative z-10 mx-auto max-w-7xl px-6 pb-28">
+    <section
+  id="tools"
+  className="relative z-10 mx-auto max-w-7xl scroll-mt-24 px-6 pb-28">
       <div className="mb-12 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">
           Tools
