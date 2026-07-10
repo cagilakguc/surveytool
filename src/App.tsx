@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom"
 import Home from "./pages/Home"
 import Dashboard from "./pages/Dashboard"
 import CsvToDxf from "./pages/CsvToDxf"
+import LandXmlViewer from "./pages/LandXmlViewer"
 import NotFound from "./pages/NotFound"
 
 function App() {
@@ -20,6 +21,10 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/tools/csv-to-dxf" element={<CsvToDxf />} />
+          <Route
+            path="/tools/landxml-viewer"
+            element={<LandXmlViewer />}
+          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
