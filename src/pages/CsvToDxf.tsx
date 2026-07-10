@@ -474,7 +474,7 @@ export default function CsvToDxf() {
       <PageSeo
         title="CSV to DXF Converter Online | SurveyTool.io"
         description="Convert survey CSV point files to DXF online. Map point ID, easting, northing, elevation and feature codes, then download a CAD-ready DXF file."
-        canonicalUrl="https://surveytool.io/tools/csv-to-dxf"
+        canonicalUrl="https://www.surveytool.io/tools/csv-to-dxf"
       />
 
       <div className="mx-auto max-w-6xl">
