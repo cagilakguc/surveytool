@@ -1,15 +1,17 @@
 import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import {
-  CheckCircle2,
-  Download,
-  FileWarning,
-  Layers3,
-  Upload,
+ArrowLeft,
+CheckCircle2,
+Download,
+FileWarning,
+Layers3,
+Upload,
 } from "lucide-react"
 
 import DxfExportSettings from "../components/DxfExportSettings"
 import type { DxfSettings } from "../components/DxfExportSettings"
+import { Link } from "react-router-dom"
 
 type ColumnMapping = {
   pointId: number
@@ -381,6 +383,13 @@ export default function CsvToDxf() {
   return (
     <div className="relative z-10 min-h-screen px-6 py-24">
       <div className="mx-auto max-w-6xl">
+        <Link
+  to="/"
+  className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-cyan-300"
+>
+  <ArrowLeft size={18} />
+  Back to home
+</Link>
         <div className="mb-10">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">
             SurveyTool
