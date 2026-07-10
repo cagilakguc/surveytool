@@ -37,7 +37,8 @@ const features: Feature[] = [
     icon: Mountain,
     title: "Surface Compare",
     description:
-      "Compare existing and design surfaces with clear visual reports.",
+      "Compare LandXML TIN surfaces with cut, fill and thickness results.",
+    to: "/tools/surface-compare",
   },
   {
     icon: Calculator,
