@@ -13,6 +13,7 @@ import {
 import DxfExportSettings from "../components/DxfExportSettings"
 import type { DxfSettings } from "../components/DxfExportSettings"
 import PageSeo from "../components/PageSeo"
+import { parsePointFileText } from "../lib/pointFile"
 
 type ColumnMapping = {
   pointId: number
@@ -209,6 +210,8 @@ export default function CsvToDxf() {
   const [fileName, setFileName] = useState("")
   const [rows, setRows] = useState<string[][]>([])
   const [hasHeader, setHasHeader] = useState(false)
+  const [detectedFormat, setDetectedFormat] = useState("")
+  const [fileError, setFileError] = useState("")
 
   const [mapping, setMapping] = useState<ColumnMapping>({
     pointId: 0,
@@ -250,6 +253,7 @@ export default function CsvToDxf() {
     }
 
     setFileName(file.name)
+    setFileError("")
 
     const reader = new FileReader()
 
@@ -260,12 +264,15 @@ export default function CsvToDxf() {
         return
       }
 
-      const parsedRows = text
-        .split(/\r?\n/)
-        .filter((line) => line.trim() !== "")
-        .map((line) =>
-          line.split(",").map((cell) => cell.trim()),
-        )
+      const parsedFile = parsePointFileText(text)
+      const parsedRows = parsedFile.rows
+
+      if (parsedRows.length === 0) {
+        setRows([])
+        setDetectedFormat("")
+        setFileError("The selected file does not contain any data rows.")
+        return
+      }
 
       const headerDetected =
         parsedRows.length > 0 &&
@@ -273,8 +280,18 @@ export default function CsvToDxf() {
 
       const columnCount = parsedRows[0]?.length ?? 0
 
+      if (columnCount < 3) {
+        setRows([])
+        setDetectedFormat(parsedFile.delimiterLabel)
+        setFileError(
+          "At least three columns are required: Point ID, Easting and Northing.",
+        )
+        return
+      }
+
       setHasHeader(headerDetected)
       setRows(parsedRows)
+      setDetectedFormat(parsedFile.delimiterLabel)
 
       setMapping({
         pointId: 0,
@@ -472,8 +489,8 @@ export default function CsvToDxf() {
   return (
     <div className="relative z-10 min-h-screen px-6 py-24">
       <PageSeo
-        title="CSV to DXF Converter Online | SurveyTool.io"
-        description="Convert survey CSV point files to DXF online. Map point ID, easting, northing, elevation and feature codes, then download a CAD-ready DXF file."
+        title="CSV & TXT to DXF Converter Online | SurveyTool.io"
+        description="Convert CSV and TXT survey point files to DXF online. Automatically detect delimiters, map point columns and download a CAD-ready DXF file."
         canonicalUrl="https://www.surveytool.io/tools/csv-to-dxf"
       />
 
@@ -492,13 +509,13 @@ export default function CsvToDxf() {
           </p>
 
           <h1 className="mt-4 text-5xl font-bold">
-            CSV → DXF
+            CSV / TXT → DXF
           </h1>
 
           <p className="mt-4 max-w-2xl text-slate-400">
-            Upload your survey CSV, map its columns,
-            choose the DXF settings and download the
-            finished drawing.
+            Upload a CSV or TXT survey point file, map its
+            columns, choose the DXF settings and download
+            the finished drawing.
           </p>
         </div>
 
@@ -509,16 +526,16 @@ export default function CsvToDxf() {
           />
 
           <div className="text-xl font-semibold">
-            Choose CSV File
+            Choose CSV or TXT File
           </div>
 
           <div className="mt-2 text-slate-400">
-            Click here to browse
+            Comma, tab, semicolon and whitespace supported
           </div>
 
           <input
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.txt,text/csv,text/plain"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -528,6 +545,20 @@ export default function CsvToDxf() {
           <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-5">
             <strong>Selected File:</strong>{" "}
             {fileName}
+            {detectedFormat && (
+              <span className="ml-3 text-sm text-cyan-300">
+                {detectedFormat}
+              </span>
+            )}
+          </div>
+        )}
+
+        {fileError && (
+          <div
+            role="alert"
+            className="mt-6 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-rose-200"
+          >
+            {fileError}
           </div>
         )}
 
@@ -541,7 +572,7 @@ export default function CsvToDxf() {
               <p className="mt-2 text-sm text-slate-400">
                 Elevation and Feature Code are optional.
                 Select “Not included” when they are not
-                present in the CSV.
+                present in the point file.
               </p>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">

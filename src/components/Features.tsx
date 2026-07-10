@@ -21,9 +21,9 @@ type Feature = {
 const features: Feature[] = [
   {
     icon: FileText,
-    title: "CSV → DXF",
+    title: "CSV / TXT → DXF",
     description:
-      "Convert survey point files into clean DXF drawings ready for CAD and field workflows.",
+      "Convert CSV and TXT survey point files into clean DXF drawings ready for CAD workflows.",
     to: "/tools/csv-to-dxf",
   },
   {
