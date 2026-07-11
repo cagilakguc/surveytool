@@ -85,6 +85,7 @@ function formatLevel(value: number | null) {
 
 export default function LandXmlViewer() {
   const inputRef = useRef<HTMLInputElement>(null)
+  const loadIdRef = useRef(0)
   const [document, setDocument] =
     useState<LandXmlDocument | null>(null)
   const [error, setError] = useState("")
@@ -107,6 +108,8 @@ export default function LandXmlViewer() {
   }
 
   async function loadFile(file: File) {
+    const loadId = ++loadIdRef.current
+
     if (file.size > maximumFileSize) {
       setDocument(null)
       setError("Please choose a LandXML file smaller than 100 MB.")
@@ -115,14 +118,28 @@ export default function LandXmlViewer() {
 
     setIsReading(true)
     setError("")
+    // Unmount the previous SVG/TIN index before reading another large file.
+    // Without this yield, React keeps the old geometry in memory while the
+    // synchronous XML parser builds the new document, which can stall the tab.
+    setDocument(null)
 
     try {
-      readXml(await file.text(), file.name)
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() => resolve()),
+      )
+      const xmlText = await file.text()
+      if (loadId !== loadIdRef.current) return
+
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() => resolve()),
+      )
+      readXml(xmlText, file.name)
     } catch {
+      if (loadId !== loadIdRef.current) return
       setDocument(null)
       setError("The selected file could not be opened.")
     } finally {
-      setIsReading(false)
+      if (loadId === loadIdRef.current) setIsReading(false)
     }
   }
 
