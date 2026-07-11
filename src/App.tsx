@@ -6,10 +6,13 @@ import CsvToDxf from "./pages/CsvToDxf"
 import LandXmlViewer from "./pages/LandXmlViewer"
 import SurfaceCompare from "./pages/SurfaceCompare"
 import NotFound from "./pages/NotFound"
+import Auth from "./pages/Auth"
+import { AuthProvider } from "./context/AuthContext"
 
 function App() {
   return (
     <BrowserRouter>
+      <AuthProvider>
       <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
         {/* Background */}
         <div className="pointer-events-none absolute inset-0">
@@ -21,6 +24,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/auth" element={<Auth />} />
           <Route path="/tools/csv-to-dxf" element={<CsvToDxf />} />
           <Route
             path="/tools/landxml-viewer"
@@ -33,6 +37,7 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

@@ -43,13 +43,14 @@ export default function Navbar() {
           >
             LandXML Viewer
           </Link>
+          <Link className="transition hover:text-white" to="/tools/surface-compare">Surface Compare</Link>
         </nav>
 
         <Link
-          to="/tools/csv-to-dxf"
+          to="/dashboard"
           className="rounded-full bg-cyan-400 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:scale-105 hover:bg-cyan-300 sm:px-6"
         >
-          Get Started
+          Dashboard
         </Link>
       </div>
     </header>
