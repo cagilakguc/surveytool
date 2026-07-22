@@ -4,7 +4,7 @@ import {
   FileText,
   Globe,
   Mountain,
-  Calculator,
+  ScanLine,
   MapPinned,
   ClipboardList,
 } from "lucide-react"
@@ -41,10 +41,11 @@ const features: Feature[] = [
     to: "/tools/surface-compare",
   },
   {
-    icon: Calculator,
-    title: "Volume Calculator",
+    icon: ScanLine,
+    title: "Cross Section & Chainage",
     description:
-      "Calculate cut and fill volumes directly inside your browser.",
+      "Draw a section through TIN surfaces and calculate chainage, offset and RL profiles.",
+    to: "/tools/cross-section",
   },
   {
     icon: MapPinned,
