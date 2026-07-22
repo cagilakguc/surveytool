@@ -6,6 +6,7 @@ import CsvToDxf from "./pages/CsvToDxf"
 import LandXmlViewer from "./pages/LandXmlViewer"
 import SurfaceCompare from "./pages/SurfaceCompare"
 import CrossSectionTool from "./pages/CrossSectionTool"
+import PavementConformance from "./pages/PavementConformance"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
 import { AuthProvider } from "./context/AuthContext"
@@ -38,6 +39,10 @@ function App() {
             <Route
               path="/tools/cross-section"
               element={<CrossSectionTool />}
+            />
+            <Route
+              path="/tools/pavement-conformance"
+              element={<PavementConformance />}
             />
             <Route path="*" element={<NotFound />} />
           </Routes>
