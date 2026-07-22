@@ -55,9 +55,10 @@ const features: Feature[] = [
   },
   {
     icon: ClipboardList,
-    title: "Report Generator",
+    title: "Pavement Conformance",
     description:
-      "Generate professional survey reports automatically.",
+      "Compare top and bottom survey points, apply thickness tolerances and export pass/fail reports.",
+    to: "/tools/pavement-conformance",
   },
 ]
 
