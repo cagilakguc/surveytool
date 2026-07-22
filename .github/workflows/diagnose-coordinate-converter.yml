@@ -1,9 +1,9 @@
 name: Diagnose coordinate converter build
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/nz-coordinate-and-file-converter
+      - main
 
 permissions:
   contents: read
@@ -33,19 +33,12 @@ jobs:
             const fs = require('fs')
             const output = fs.readFileSync('build.log', 'utf8')
             const body = `### Coordinate converter build diagnostic\n\nExit code: ${{ steps.build.outputs.exit_code }}\n\n\`\`\`text\n${output.slice(-12000)}\n\`\`\``
-            const prs = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              commit_sha: context.sha,
+              issue_number: context.issue.number,
+              body,
             })
-            if (prs.data[0]) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prs.data[0].number,
-                body,
-              })
-            }
             if ('${{ steps.build.outputs.exit_code }}' !== '0') {
               core.setFailed('Build failed; diagnostic posted to pull request.')
             }
