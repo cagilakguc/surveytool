@@ -29,7 +29,7 @@ export async function parseLandXmlFile(
   }
 
   const worker = new Worker(
-    new URL("../workers/landxmlParser.worker.ts", import.meta.url),
+    new URL("../workers/landxmlParser.worker.js", import.meta.url),
     { type: "module" },
   )
 
