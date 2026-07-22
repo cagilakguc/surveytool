@@ -23,7 +23,7 @@ const features: Feature[] = [
     icon: FileText,
     title: "CSV / TXT → DXF",
     description:
-      "Convert CSV and TXT survey point files into clean DXF drawings ready for CAD workflows.",
+      "Create CAD-ready survey points with configurable labels, elevations and feature-code layers.",
     to: "/tools/csv-to-dxf",
   },
   {
@@ -44,14 +44,15 @@ const features: Feature[] = [
     icon: ScanLine,
     title: "Cross Section & Chainage",
     description:
-      "Draw a section through TIN surfaces and calculate chainage, offset and RL profiles.",
+      "Draw a section through TIN surfaces and compare CSV, TXT or DXF as-built points.",
     to: "/tools/cross-section",
   },
   {
     icon: MapPinned,
-    title: "Coordinate Converter",
+    title: "NZ Coordinate & File Converter",
     description:
-      "Transform coordinates between different systems in seconds.",
+      "Convert Mount Eden and NZTM coordinates, then export CSV, TXT, DXF, KML or GeoJSON.",
+    to: "/tools/coordinate-converter",
   },
   {
     icon: ClipboardList,
