@@ -7,6 +7,7 @@ import LandXmlViewer from "./pages/LandXmlViewer"
 import SurfaceCompare from "./pages/SurfaceCompare"
 import CrossSectionTool from "./pages/CrossSectionTool"
 import PavementConformance from "./pages/PavementConformance"
+import CoordinateConverter from "./pages/CoordinateConverter"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
 import { AuthProvider } from "./context/AuthContext"
@@ -28,6 +29,10 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/tools/csv-to-dxf" element={<CsvToDxf />} />
+            <Route
+              path="/tools/coordinate-converter"
+              element={<CoordinateConverter />}
+            />
             <Route
               path="/tools/landxml-viewer"
               element={<LandXmlViewer />}
