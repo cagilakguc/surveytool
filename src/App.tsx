@@ -8,6 +8,7 @@ import SurfaceCompare from "./pages/SurfaceCompare"
 import CrossSectionTool from "./pages/CrossSectionTool"
 import PavementConformance from "./pages/PavementConformance"
 import CoordinateConverter from "./pages/CoordinateConverter"
+import GisExporter from "./pages/GisExporter"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
 import { AuthProvider } from "./context/AuthContext"
@@ -32,6 +33,10 @@ function App() {
             <Route
               path="/tools/coordinate-converter"
               element={<CoordinateConverter />}
+            />
+            <Route
+              path="/tools/gis-export"
+              element={<GisExporter />}
             />
             <Route
               path="/tools/landxml-viewer"

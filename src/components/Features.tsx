@@ -7,6 +7,7 @@ import {
   ScanLine,
   MapPinned,
   ClipboardList,
+  Database,
 } from "lucide-react"
 
 import type { LucideIcon } from "lucide-react"
@@ -53,6 +54,13 @@ const features: Feature[] = [
     description:
       "Convert Mount Eden and NZTM coordinates, then export CSV, TXT, DXF, KML or GeoJSON.",
     to: "/tools/coordinate-converter",
+  },
+  {
+    icon: Database,
+    title: "Shapefile & GeoPackage Export",
+    description:
+      "Create proper PointZ Shapefile ZIP or GeoPackage datasets with CRS and survey attributes.",
+    to: "/tools/gis-export",
   },
   {
     icon: ClipboardList,
