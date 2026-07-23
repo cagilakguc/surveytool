@@ -1,0 +1,70 @@
+name: Validate mixed GIS geometry
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm install --no-save --package-lock=false sql.js@1.14.1 tsx@4
+      - run: npx tsx scripts/validate-gis-geometry.mjs
+      - name: Validate mixed Shapefile ZIP
+        run: |
+          python - <<'PY'
+          import struct
+          import zipfile
+
+          path = "/tmp/mixed-validation.zip"
+          groups = {
+              "mixed-validation_points": (11, 2),
+              "mixed-validation_lines": (13, 1),
+              "mixed-validation_polygons": (15, 1),
+          }
+
+          with zipfile.ZipFile(path) as archive:
+              assert archive.testzip() is None
+              names = set(archive.namelist())
+
+              for base, (shape_type, record_count) in groups.items():
+                  required = {
+                      f"{base}.shp",
+                      f"{base}.shx",
+                      f"{base}.dbf",
+                      f"{base}.prj",
+                      f"{base}.cpg",
+                  }
+                  assert required.issubset(names), (base, required - names)
+
+                  shp = archive.read(f"{base}.shp")
+                  shx = archive.read(f"{base}.shx")
+                  dbf = archive.read(f"{base}.dbf")
+                  prj = archive.read(f"{base}.prj").decode("utf-8")
+                  cpg = archive.read(f"{base}.cpg").decode("utf-8")
+
+                  assert struct.unpack(">i", shp[0:4])[0] == 9994
+                  assert struct.unpack("<i", shp[28:32])[0] == 1000
+                  assert struct.unpack("<i", shp[32:36])[0] == shape_type
+                  assert struct.unpack(">i", shx[0:4])[0] == 9994
+                  assert struct.unpack("<i", shx[32:36])[0] == shape_type
+                  assert struct.unpack("<I", dbf[4:8])[0] == record_count
+                  assert 'AUTHORITY["EPSG","2193"]' in prj
+                  assert cpg == "UTF-8"
+
+                  first_record_type = struct.unpack("<i", shp[108:112])[0]
+                  assert first_record_type == shape_type
+
+          print("PointZ, PolyLineZ and PolygonZ Shapefile datasets validated.")
+          PY

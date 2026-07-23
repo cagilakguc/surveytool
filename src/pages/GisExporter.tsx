@@ -17,16 +17,31 @@ import {
 } from "../lib/nzCoordinates"
 import type { CoordinateReferenceSystem } from "../lib/nzCoordinates"
 import {
-  createGeoPackage,
-  createShapefileZip,
-} from "../lib/gisExports"
-import { transformSurveyPoints } from "../lib/surveyFileConversion"
-import { parseSurveyPointFile } from "../lib/surveyPointFile"
-import type { SurveyPointLayer } from "../lib/surveyPointFile"
+  createGeometryGeoPackage,
+  createGeometryShapefileZip,
+} from "../lib/gisGeometryExports"
+import {
+  geometryFeatureCount,
+  geometryVertexCount,
+  parseSurveyGeometryFile,
+  transformSurveyGeometryLayer,
+} from "../lib/surveyGeometry"
+import type {
+  SurveyGeometryLayer,
+  SurveyVertex,
+} from "../lib/surveyGeometry"
 
 const maximumFileSize = 50 * 1024 * 1024
 
 type GisFormat = "SHAPEFILE" | "GEOPACKAGE"
+
+type PreviewRow = {
+  type: "Point" | "Line" | "Polygon"
+  id: string
+  code: string
+  vertices: number
+  elevation: string
+}
 
 function downloadBinary(
   content: ArrayBuffer,
@@ -48,7 +63,57 @@ function safeFileName(value: string) {
   return value
     .replace(/\.[^/.]+$/, "")
     .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "survey-points"
+    .replace(/^-+|-+$/g, "") || "survey-geometry"
+}
+
+function elevationRange(vertices: SurveyVertex[]) {
+  if (vertices.length === 0) return "—"
+  let minimum = Number.POSITIVE_INFINITY
+  let maximum = Number.NEGATIVE_INFINITY
+  vertices.forEach((vertex) => {
+    minimum = Math.min(minimum, vertex.elevation)
+    maximum = Math.max(maximum, vertex.elevation)
+  })
+  return Math.abs(maximum - minimum) < 0.00005
+    ? minimum.toFixed(4)
+    : `${minimum.toFixed(4)}–${maximum.toFixed(4)}`
+}
+
+function createPreviewRows(layer: SurveyGeometryLayer) {
+  const rows: PreviewRow[] = []
+
+  layer.points.slice(0, 5).forEach((point) => {
+    rows.push({
+      type: "Point",
+      id: point.id,
+      code: point.code,
+      vertices: 1,
+      elevation: point.elevation.toFixed(4),
+    })
+  })
+
+  layer.lines.slice(0, 5).forEach((line) => {
+    rows.push({
+      type: "Line",
+      id: line.id,
+      code: line.code,
+      vertices: line.vertices.length,
+      elevation: elevationRange(line.vertices),
+    })
+  })
+
+  layer.polygons.slice(0, 5).forEach((polygon) => {
+    const vertices = polygon.rings.flat()
+    rows.push({
+      type: "Polygon",
+      id: polygon.id,
+      code: polygon.code,
+      vertices: vertices.length,
+      elevation: elevationRange(vertices),
+    })
+  })
+
+  return rows.slice(0, 12)
 }
 
 export default function GisExporter() {
@@ -57,8 +122,8 @@ export default function GisExporter() {
   const [targetCrs, setTargetCrs] =
     useState<CoordinateReferenceSystem>("EPSG:2193")
   const [format, setFormat] = useState<GisFormat>("SHAPEFILE")
-  const [pointLayer, setPointLayer] =
-    useState<SurveyPointLayer | null>(null)
+  const [geometryLayer, setGeometryLayer] =
+    useState<SurveyGeometryLayer | null>(null)
   const [isReading, setIsReading] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState("")
@@ -66,18 +131,23 @@ export default function GisExporter() {
   const sourceSystem = getCoordinateSystem(sourceCrs)
   const targetSystem = getCoordinateSystem(targetCrs)
 
-  const convertedPoints = useMemo(() => {
-    if (!pointLayer) return []
+  const convertedLayer = useMemo(() => {
+    if (!geometryLayer) return null
     try {
-      return transformSurveyPoints(
-        pointLayer.points,
+      return transformSurveyGeometryLayer(
+        geometryLayer,
         sourceCrs,
         targetCrs,
       )
     } catch {
-      return []
+      return null
     }
-  }, [pointLayer, sourceCrs, targetCrs])
+  }, [geometryLayer, sourceCrs, targetCrs])
+
+  const preview = useMemo(
+    () => convertedLayer ? createPreviewRows(convertedLayer) : [],
+    [convertedLayer],
+  )
 
   async function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
@@ -87,21 +157,21 @@ export default function GisExporter() {
     if (!file) return
 
     if (file.size > maximumFileSize) {
-      setPointLayer(null)
-      setError("Please choose a point file smaller than 50 MB.")
+      setGeometryLayer(null)
+      setError("Please choose a survey file smaller than 50 MB.")
       return
     }
 
     setIsReading(true)
     setError("")
     try {
-      setPointLayer(await parseSurveyPointFile(file))
+      setGeometryLayer(await parseSurveyGeometryFile(file))
     } catch (caughtError) {
-      setPointLayer(null)
+      setGeometryLayer(null)
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "The survey point file could not be opened.",
+          : "The survey geometry file could not be opened.",
       )
     } finally {
       setIsReading(false)
@@ -109,11 +179,11 @@ export default function GisExporter() {
   }
 
   async function exportFile() {
-    if (!pointLayer || convertedPoints.length === 0) return
+    if (!geometryLayer || !convertedLayer) return
 
     setIsExporting(true)
     setError("")
-    const baseName = safeFileName(pointLayer.name)
+    const baseName = safeFileName(geometryLayer.name)
     const crsName = targetSystem.shortName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -121,19 +191,19 @@ export default function GisExporter() {
 
     try {
       if (format === "SHAPEFILE") {
-        const content = createShapefileZip(
-          convertedPoints,
+        const content = createGeometryShapefileZip(
+          convertedLayer,
           targetCrs,
           `${baseName}-${crsName}`,
         )
         downloadBinary(
           content,
           "application/zip",
-          `${baseName}-${crsName}-shapefile.zip`,
+          `${baseName}-${crsName}-shapefiles.zip`,
         )
       } else {
-        const content = await createGeoPackage(
-          convertedPoints,
+        const content = await createGeometryGeoPackage(
+          convertedLayer,
           targetCrs,
         )
         downloadBinary(
@@ -153,14 +223,18 @@ export default function GisExporter() {
     }
   }
 
-  const preview = convertedPoints.slice(0, 12)
-  const coordinateDigits = targetCrs === "EPSG:4167" ? 9 : 4
+  const featureCount = convertedLayer
+    ? geometryFeatureCount(convertedLayer)
+    : 0
+  const vertexCount = convertedLayer
+    ? geometryVertexCount(convertedLayer)
+    : 0
 
   return (
     <div className="relative z-10 min-h-screen px-6 py-20 md:py-24">
       <PageSeo
-        title="Survey Point Shapefile & GeoPackage Export | SurveyTool.io"
-        description="Convert CSV, TXT or DXF survey points into Shapefile ZIP or GeoPackage. Reproject Mount Eden, NZTM and NZGD2000 coordinates in your browser."
+        title="Survey DXF to Shapefile & GeoPackage Export | SurveyTool.io"
+        description="Convert CSV, TXT or DXF survey geometry into point, line and polygon Shapefiles or GeoPackage. Reproject Mount Eden, NZTM and NZGD2000 coordinates in your browser."
         canonicalUrl="https://www.surveytool.io/tools/gis-export"
       />
 
@@ -179,18 +253,18 @@ export default function GisExporter() {
               SurveyTool
             </p>
             <h1 className="mt-4 max-w-4xl text-4xl font-bold tracking-tight sm:text-5xl">
-              Shapefile & GeoPackage Export
+              Point, Line & Polygon GIS Export
             </h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-400">
-              Turn CSV, TXT or ASCII DXF survey points into proper GIS datasets.
-              Transform Mount Eden, NZTM or NZGD2000 coordinates and retain point
-              IDs, RLs and feature codes.
+              Convert CSV, TXT or ASCII DXF into proper GIS datasets. DXF points,
+              open polylines and closed boundaries remain separate geometry instead
+              of being flattened into disconnected vertices.
             </p>
           </div>
 
           <div className="inline-flex w-fit items-center gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-200">
             <ShieldCheck size={20} />
-            Point data stays in your browser
+            Survey geometry stays in your browser
           </div>
         </div>
 
@@ -208,7 +282,7 @@ export default function GisExporter() {
             />
             <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300">
               <Upload size={18} />
-              {isReading ? "Reading file…" : "Choose point file"}
+              {isReading ? "Reading geometry…" : "Choose survey file"}
               <input
                 type="file"
                 accept=".csv,.txt,.dxf,text/csv,text/plain,application/dxf"
@@ -220,8 +294,8 @@ export default function GisExporter() {
           </div>
 
           <p className="mt-4 text-sm text-slate-500">
-            Supported input: CSV, TXT and ASCII DXF. CSV/TXT may include Point ID,
-            Easting, Northing, Elevation/RL and Code columns.
+            CSV and TXT create points. ASCII DXF retains POINT, INSERT, LINE,
+            LWPOLYLINE and POLYLINE/VERTEX geometry. Closed polylines become polygons.
           </p>
         </section>
 
@@ -234,14 +308,25 @@ export default function GisExporter() {
           </div>
         )}
 
-        {pointLayer && (
+        {geometryLayer && convertedLayer && (
           <div className="mt-8 space-y-8">
-            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Metric label="File" value={pointLayer.name} />
-              <Metric label="Input format" value={pointLayer.format} />
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+              <Metric label="File" value={geometryLayer.name} />
               <Metric
-                label="Survey points"
-                value={pointLayer.points.length.toLocaleString("en-NZ")}
+                label="Points"
+                value={convertedLayer.points.length.toLocaleString("en-NZ")}
+              />
+              <Metric
+                label="Lines"
+                value={convertedLayer.lines.length.toLocaleString("en-NZ")}
+              />
+              <Metric
+                label="Polygons"
+                value={convertedLayer.polygons.length.toLocaleString("en-NZ")}
+              />
+              <Metric
+                label="Total vertices"
+                value={vertexCount.toLocaleString("en-NZ")}
               />
               <Metric
                 label="Transformation"
@@ -249,9 +334,9 @@ export default function GisExporter() {
               />
             </section>
 
-            {pointLayer.warnings.length > 0 && (
+            {geometryLayer.warnings.length > 0 && (
               <section className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-sm text-amber-200">
-                {pointLayer.warnings.map((warning) => (
+                {geometryLayer.warnings.map((warning) => (
                   <p key={warning}>{warning}</p>
                 ))}
               </section>
@@ -260,40 +345,42 @@ export default function GisExporter() {
             <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
               <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
                 <div className="border-b border-white/10 px-6 py-5">
-                  <h2 className="text-xl font-semibold">Transformed preview</h2>
+                  <h2 className="text-xl font-semibold">Retained geometry preview</h2>
                   <p className="mt-1 text-sm text-slate-400">
-                    First {preview.length.toLocaleString("en-NZ")} points in {targetSystem.name}.
+                    {featureCount.toLocaleString("en-NZ")} feature{featureCount === 1 ? "" : "s"} in {targetSystem.name}.
                   </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-slate-950/60 text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Point</th>
-                        <th className="px-4 py-3">{targetSystem.coordinateLabels[0]}</th>
-                        <th className="px-4 py-3">{targetSystem.coordinateLabels[1]}</th>
-                        <th className="px-4 py-3">RL</th>
-                        <th className="px-4 py-3">Code</th>
+                        <th className="px-4 py-3">Geometry</th>
+                        <th className="px-4 py-3">ID</th>
+                        <th className="px-4 py-3">Code / layer</th>
+                        <th className="px-4 py-3">Vertices</th>
+                        <th className="px-4 py-3">RL range</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {preview.map((point, index) => (
+                      {preview.map((row, index) => (
                         <tr
-                          key={`${point.id}-${index}`}
+                          key={`${row.type}-${row.id}-${index}`}
                           className="border-t border-white/5"
                         >
-                          <td className="px-4 py-3 font-medium text-white">{point.id}</td>
-                          <td className="px-4 py-3 font-mono text-slate-300">
-                            {point.easting.toFixed(coordinateDigits)}
+                          <td className="px-4 py-3 font-medium text-cyan-200">
+                            {row.type}
                           </td>
-                          <td className="px-4 py-3 font-mono text-slate-300">
-                            {point.northing.toFixed(coordinateDigits)}
-                          </td>
-                          <td className="px-4 py-3 text-slate-300">
-                            {point.elevation.toFixed(4)}
+                          <td className="px-4 py-3 font-medium text-white">
+                            {row.id}
                           </td>
                           <td className="px-4 py-3 text-slate-400">
-                            {point.code || "—"}
+                            {row.code || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            {row.vertices.toLocaleString("en-NZ")}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-slate-300">
+                            {row.elevation}
                           </td>
                         </tr>
                       ))}
@@ -307,35 +394,35 @@ export default function GisExporter() {
                   selected={format === "SHAPEFILE"}
                   icon={FileArchive}
                   title="Shapefile ZIP"
-                  description="PointZ geometry with SHP, SHX, DBF, PRJ and UTF-8 CPG components. Best for legacy GIS and client handover requirements."
+                  description="Creates separate PointZ, PolyLineZ and PolygonZ datasets inside one ZIP. Each geometry set includes SHP, SHX, DBF, PRJ and UTF-8 CPG files."
                   onSelect={() => setFormat("SHAPEFILE")}
                 />
                 <FormatCard
                   selected={format === "GEOPACKAGE"}
                   icon={Database}
                   title="GeoPackage"
-                  description="A single OGC SQLite file with a 3D point feature table, CRS metadata and unrestricted attribute names. Best for QGIS and modern GIS workflows."
+                  description="Creates one OGC SQLite file with separate survey_points, survey_lines and survey_polygons feature tables plus CRS metadata."
                   onSelect={() => setFormat("GEOPACKAGE")}
                 />
 
                 {format === "GEOPACKAGE" && (
                   <p className="rounded-2xl border border-blue-400/20 bg-blue-400/5 p-4 text-xs leading-5 text-blue-200/80">
                     SurveyTool downloads the SQLite WebAssembly runtime when the
-                    first GeoPackage is created. Your survey points are not uploaded.
+                    first GeoPackage is created. Your geometry is not uploaded.
                   </p>
                 )}
 
                 <button
                   type="button"
                   onClick={() => void exportFile()}
-                  disabled={isExporting || convertedPoints.length === 0}
+                  disabled={isExporting || featureCount === 0}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download size={18} />
                   {isExporting
                     ? format === "GEOPACKAGE"
-                      ? "Building GeoPackage…"
-                      : "Building Shapefile…"
+                      ? "Building geometry GeoPackage…"
+                      : "Building geometry Shapefiles…"
                     : format === "GEOPACKAGE"
                       ? "Download GeoPackage"
                       : "Download Shapefile ZIP"}
@@ -346,10 +433,10 @@ export default function GisExporter() {
         )}
 
         <section className="mt-8 rounded-3xl border border-amber-300/20 bg-amber-300/5 p-6 text-sm leading-6 text-amber-100/80">
-          <strong className="text-amber-200">Format note:</strong>{" "}
-          Shapefile attribute names and text widths are restricted by the legacy
-          dBASE format. GeoPackage is the preferred modern handover format when
-          the receiving software supports it.
+          <strong className="text-amber-200">Geometry note:</strong>{" "}
+          Straight DXF line and polyline segments are retained. Curves, arcs, splines,
+          hatches and Civil 3D proxy objects are currently skipped rather than being
+          silently converted into inaccurate geometry.
         </section>
       </div>
     </div>
