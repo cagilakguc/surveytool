@@ -11,6 +11,8 @@ import CoordinateConverter from "./pages/CoordinateConverter"
 import GisExporter from "./pages/GisExporter"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
+import Help from "./pages/Help"
+import HelpFeedbackButton from "./components/HelpFeedbackButton"
 import { AuthProvider } from "./context/AuthContext"
 
 function App() {
@@ -26,6 +28,7 @@ function App() {
           </div>
 
           <Routes>
+            <Route path="/help" element={<Help />} />
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/auth" element={<Auth />} />
@@ -56,6 +59,7 @@ function App() {
             />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <HelpFeedbackButton />
         </main>
       </AuthProvider>
     </BrowserRouter>

@@ -26,7 +26,7 @@ export default function Navbar() {
 
         <nav
           aria-label="Primary navigation"
-          className="hidden items-center gap-8 text-sm text-slate-300 md:flex"
+          className="hidden items-center gap-5 text-sm text-slate-300 lg:flex"
         >
           <a className="transition hover:text-white" href="#tools">
             Tools
@@ -44,6 +44,7 @@ export default function Navbar() {
             LandXML Viewer
           </Link>
           <Link className="transition hover:text-white" to="/tools/surface-compare">Surface Compare</Link>
+          <Link className="transition hover:text-white" to="/help">Help & Feedback</Link>
         </nav>
 
         <Link

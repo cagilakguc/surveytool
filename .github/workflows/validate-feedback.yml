@@ -1,0 +1,21 @@
+name: Validate feedback
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - run: npx tsc -p tsconfig.feedback.json
+      - run: npm install --no-save --package-lock=false tsx@4.23.15
+      - run: node --import tsx scripts/validate-feedback.mjs
