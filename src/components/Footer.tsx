@@ -31,6 +31,7 @@ export default function Footer() {
           <Link className="transition hover:text-white" to="/">
             Home
           </Link>
+          <Link className="transition hover:text-white" to="/help">Help & Feedback</Link>
           <Link
             className="transition hover:text-white"
             to="/tools/csv-to-dxf"
