@@ -57,9 +57,9 @@ const features: Feature[] = [
   },
   {
     icon: Database,
-    title: "Shapefile & GeoPackage Export",
+    title: "Point, Line & Polygon GIS Export",
     description:
-      "Create proper PointZ Shapefile ZIP or GeoPackage datasets with CRS and survey attributes.",
+      "Retain DXF points, open polylines and closed boundaries in Shapefile or GeoPackage datasets.",
     to: "/tools/gis-export",
   },
   {

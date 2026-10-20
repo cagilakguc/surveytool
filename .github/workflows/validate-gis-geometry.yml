@@ -1,0 +1,26 @@
+name: Validate mixed GIS geometry
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - run: npm install --no-save --package-lock=false sql.js@1.14.1 tsx@4.23.15
+      - run: node --import tsx scripts/validate-dxf-geometry.mjs
+      - run: node --import tsx scripts/validate-gis-geometry.mjs
+      - run: python scripts/validate-gis-files.py
