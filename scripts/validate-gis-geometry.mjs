@@ -3,6 +3,7 @@ import fs from "node:fs"
 import { createRequire } from "node:module"
 
 import initSqlJs from "sql.js"
+import { parseSurveyGeometryFile } from "../src/lib/surveyGeometry.ts"
 
 const require = createRequire(import.meta.url)
 const wasmPath = require.resolve("sql.js/dist/sql-wasm.wasm")
@@ -103,3 +104,16 @@ for (const [tableName, expectedType] of [
 
 db.close()
 console.log("Mixed GeoPackage point, line and polygon schema and geometry validated.")
+
+const demo = await parseSurveyGeometryFile(new File([
+  fs.readFileSync(new URL("../public/examples/gis-mixed.dxf", import.meta.url)),
+], "gis-mixed.dxf"))
+assert.equal(demo.points.length, 2)
+assert.equal(demo.lines.length, 2)
+assert.equal(demo.polygons.length, 1)
+assert.deepEqual(demo.lines[1].vertices.map((v) => v.elevation), [12.15, 12.3, 12.45])
+assert(demo.polygons[0].rings[0].every((v) => v.elevation === 11.9))
+assert.equal(demo.warnings.length, 0)
+fs.writeFileSync("/tmp/demo-validation.zip", new Uint8Array(createGeometryShapefileZip(demo, "EPSG:2193", "demo-validation")))
+fs.writeFileSync("/tmp/demo-validation.gpkg", new Uint8Array(await createGeometryGeoPackage(demo, "EPSG:2193")))
+console.log("Real ASCII DXF demo parsed and exported to mixed 3D Shapefile and GeoPackage datasets.")

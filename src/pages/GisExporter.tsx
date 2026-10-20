@@ -155,7 +155,10 @@ export default function GisExporter() {
     const file = event.target.files?.[0]
     event.target.value = ""
     if (!file) return
+    await readSurveyFile(file)
+  }
 
+  async function readSurveyFile(file: File) {
     if (file.size > maximumFileSize) {
       setGeometryLayer(null)
       setError("Please choose a survey file smaller than 50 MB.")
@@ -164,6 +167,7 @@ export default function GisExporter() {
 
     setIsReading(true)
     setError("")
+    setGeometryLayer(null)
     try {
       setGeometryLayer(await parseSurveyGeometryFile(file))
     } catch (caughtError) {
@@ -173,6 +177,24 @@ export default function GisExporter() {
           ? caughtError.message
           : "The survey geometry file could not be opened.",
       )
+    } finally {
+      setIsReading(false)
+    }
+  }
+
+  async function loadDemo() {
+    setIsReading(true)
+    setError("")
+    setGeometryLayer(null)
+    try {
+      const response = await fetch("/examples/gis-mixed.dxf")
+      if (!response.ok) throw new Error("The demo file could not be loaded. Please try again.")
+      const file = new File([await response.text()], "SurveyTool-GIS-demo.dxf", { type: "application/dxf" })
+      setSourceCrs("EPSG:2193")
+      setTargetCrs("EPSG:2193")
+      await readSurveyFile(file)
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "The demo could not be opened.")
     } finally {
       setIsReading(false)
     }
@@ -280,6 +302,15 @@ export default function GisExporter() {
               value={targetCrs}
               onChange={setTargetCrs}
             />
+            <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={isReading || isExporting}
+              onClick={() => void loadDemo()}
+              className="rounded-full border border-cyan-400/30 px-5 py-3 font-semibold text-cyan-200 transition hover:bg-cyan-400/10 disabled:opacity-50"
+            >
+              Load demo
+            </button>
             <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300">
               <Upload size={18} />
               {isReading ? "Reading geometry…" : "Choose survey file"}
@@ -291,11 +322,13 @@ export default function GisExporter() {
                 onChange={handleFileChange}
               />
             </label>
+            </div>
           </div>
 
           <p className="mt-4 text-sm text-slate-500">
             CSV and TXT create points. ASCII DXF retains POINT, INSERT, LINE,
             LWPOLYLINE and POLYLINE/VERTEX geometry. Closed polylines become polygons.
+            Heights retain the input vertical datum.
           </p>
         </section>
 
@@ -407,15 +440,15 @@ export default function GisExporter() {
 
                 {format === "GEOPACKAGE" && (
                   <p className="rounded-2xl border border-blue-400/20 bg-blue-400/5 p-4 text-xs leading-5 text-blue-200/80">
-                    SurveyTool downloads the SQLite WebAssembly runtime when the
-                    first GeoPackage is created. Your geometry is not uploaded.
+                    An internet connection is needed for the first GeoPackage
+                    export. Your survey data stays in your browser.
                   </p>
                 )}
 
                 <button
                   type="button"
                   onClick={() => void exportFile()}
-                  disabled={isExporting || featureCount === 0}
+                  disabled={isReading || isExporting || featureCount === 0}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download size={18} />
@@ -434,7 +467,8 @@ export default function GisExporter() {
 
         <section className="mt-8 rounded-3xl border border-amber-300/20 bg-amber-300/5 p-6 text-sm leading-6 text-amber-100/80">
           <strong className="text-amber-200">Geometry note:</strong>{" "}
-          Straight DXF line and polyline segments are retained. Curves, arcs, splines,
+          Model-space points and straight linework are retained with their heights.
+          Block references become insertion points. Curves, arcs, splines,
           hatches and Civil 3D proxy objects are currently skipped rather than being
           silently converted into inaccurate geometry.
         </section>

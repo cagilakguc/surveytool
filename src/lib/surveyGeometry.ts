@@ -44,14 +44,19 @@ const maximumFeatures = 500_000
 const maximumVertices = 2_000_000
 
 function parseDxfPairs(text: string) {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/)
+  const lines = text.replace(/^\uFEFF/, "").trimEnd().split(/\r\n|\n|\r/)
+  if (lines.length % 2 !== 0) {
+    throw new Error("The DXF ends with a group code that has no value.")
+  }
   const pairs: DxfPair[] = []
 
   for (let index = 0; index + 1 < lines.length; index += 2) {
-    const code = Number(lines[index].trim())
-    if (Number.isFinite(code)) {
-      pairs.push({ code, value: lines[index + 1].trim() })
+    const rawCode = lines[index].trim()
+    const code = Number(rawCode)
+    if (!rawCode || !Number.isInteger(code) || code < 0 || code > 1071) {
+      throw new Error(`Invalid DXF group code at line ${index + 1}.`)
     }
+    pairs.push({ code, value: lines[index + 1].trim() })
   }
 
   return pairs
@@ -60,8 +65,25 @@ function parseDxfPairs(text: string) {
 function createEntities(pairs: DxfPair[]) {
   const entities: DxfEntity[] = []
   let current: DxfEntity | null = null
+  let section = ""
 
-  pairs.forEach((pair) => {
+  pairs.forEach((pair, index) => {
+    if (pair.code === 0 && pair.value.toUpperCase() === "SECTION") {
+      if (current) entities.push(current)
+      current = null
+      section = pairs[index + 1]?.code === 2
+        ? pairs[index + 1].value.toUpperCase()
+        : ""
+      return
+    }
+    if (pair.code === 0 && pair.value.toUpperCase() === "ENDSEC") {
+      if (current) entities.push(current)
+      current = null
+      section = ""
+      return
+    }
+    // Block definitions, tables and thumbnail data are not placed survey objects.
+    if (section !== "ENTITIES") return
     if (pair.code === 0) {
       if (current) entities.push(current)
       current = { type: pair.value.toUpperCase(), pairs: [] }
@@ -79,15 +101,53 @@ function entityValue(entity: DxfEntity, code: number) {
 }
 
 function entityNumber(entity: DxfEntity, code: number, fallback = 0) {
-  const parsed = Number(entityValue(entity, code))
-  return Number.isFinite(parsed) ? parsed : fallback
+  const value = entityValue(entity, code)
+  if (value === undefined) return fallback
+  return value ? Number(value) : Number.NaN
 }
 
-function entityNumbers(entity: DxfEntity, code: number) {
-  return entity.pairs
-    .filter((pair) => pair.code === code)
-    .map((pair) => Number(pair.value))
-    .filter(Number.isFinite)
+function finiteVertex(vertex: SurveyVertex) {
+  return Number.isFinite(vertex.easting) &&
+    Number.isFinite(vertex.northing) && Number.isFinite(vertex.elevation)
+}
+
+function entityVertex(entity: DxfEntity, xCode = 10): SurveyVertex {
+  return {
+    easting: entityNumber(entity, xCode, Number.NaN),
+    northing: entityNumber(entity, xCode + 10, Number.NaN),
+    elevation: entityNumber(entity, xCode + 20),
+  }
+}
+
+function ocsToWorld(vertex: SurveyVertex, entity: DxfEntity): SurveyVertex {
+  const x = entityNumber(entity, 210)
+  const y = entityNumber(entity, 220)
+  const z = entityNumber(entity, 230, 1)
+  if (x === 0 && y === 0 && z === 1) return vertex
+
+  // Autodesk's arbitrary-axis algorithm constructs the OCS basis in world space.
+  const magnitude = Math.hypot(x, y, z)
+  const nx = x / magnitude
+  const ny = y / magnitude
+  const nz = z / magnitude
+  const nearPole = Math.abs(nx) < 1 / 64 && Math.abs(ny) < 1 / 64
+  const axisX = nearPole ? [nz, 0, -nx] : [-ny, nx, 0]
+  const axisLength = Math.hypot(...axisX)
+  const ax = axisX.map((value) => value / axisLength)
+  const ay = [
+    ny * ax[2] - nz * ax[1],
+    nz * ax[0] - nx * ax[2],
+    nx * ax[1] - ny * ax[0],
+  ]
+  return {
+    easting: vertex.easting * ax[0] + vertex.northing * ay[0] + vertex.elevation * nx,
+    northing: vertex.easting * ax[1] + vertex.northing * ay[1] + vertex.elevation * ny,
+    elevation: vertex.easting * ax[2] + vertex.northing * ay[2] + vertex.elevation * nz,
+  }
+}
+
+function hasBulges(entity: DxfEntity) {
+  return entity.pairs.some((pair) => pair.code === 42 && Number(pair.value) !== 0)
 }
 
 function samePosition(first: SurveyVertex, second: SurveyVertex) {
@@ -119,19 +179,26 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
   const lines: SurveyLineFeature[] = []
   const polygons: SurveyPolygonFeature[] = []
   const unsupported = new Map<string, number>()
+  const invalid = new Map<string, number>()
   let vertexCount = 0
+  let paperSpaceCount = 0
+  let insertCount = 0
+
+  function recordSkipped(collection: Map<string, number>, type: string) {
+    collection.set(type, (collection.get(type) || 0) + 1)
+  }
 
   function addPoint(entity: DxfEntity, prefix: string) {
-    const easting = Number(entityValue(entity, 10))
-    const northing = Number(entityValue(entity, 20))
-    const elevation = entityNumber(entity, 30)
-    if (!Number.isFinite(easting) || !Number.isFinite(northing)) return
+    const sourceVertex = entityVertex(entity)
+    const vertex = entity.type === "INSERT" ? ocsToWorld(sourceVertex, entity) : sourceVertex
+    if (!finiteVertex(vertex)) {
+      recordSkipped(invalid, entity.type)
+      return
+    }
 
     points.push({
       id: featureId(entity, prefix, points.length + 1),
-      easting,
-      northing,
-      elevation,
+      ...vertex,
       code: entityValue(entity, 8) || "",
     })
   }
@@ -142,11 +209,19 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
     id: string,
     code: string,
   ) {
-    if (vertices.length < 2) return
-    vertexCount += vertices.length
+    if (vertices.length < (closed ? 3 : 2) || !vertices.every(finiteVertex)) {
+      recordSkipped(invalid, closed ? "closed polyline" : "line/polyline")
+      return
+    }
+    const path = closed ? closeRing(vertices) : vertices
+    if (closed && new Set(path.map((vertex) => `${vertex.easting},${vertex.northing}`)).size < 3) {
+      recordSkipped(invalid, "closed polyline")
+      return
+    }
+    vertexCount += path.length
 
-    if (closed && vertices.length >= 3) {
-      polygons.push({ id, code, rings: [closeRing(vertices)] })
+    if (closed) {
+      polygons.push({ id, code, rings: [path] })
     } else {
       lines.push({ id, code, vertices })
     }
@@ -155,26 +230,21 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
   for (let index = 0; index < entities.length; index += 1) {
     const entity = entities[index]
     const layer = entityValue(entity, 8) || ""
+    const layout = entityValue(entity, 410)
+    if (entityNumber(entity, 67) === 1 || (layout && layout.toUpperCase() !== "MODEL")) {
+      paperSpaceCount += 1
+      continue
+    }
 
     if (entity.type === "POINT" || entity.type === "INSERT") {
+      if (entity.type === "INSERT") insertCount += 1
       addPoint(entity, entity.type)
       continue
     }
 
     if (entity.type === "LINE") {
       addPath(
-        [
-          {
-            easting: entityNumber(entity, 10),
-            northing: entityNumber(entity, 20),
-            elevation: entityNumber(entity, 30),
-          },
-          {
-            easting: entityNumber(entity, 11),
-            northing: entityNumber(entity, 21),
-            elevation: entityNumber(entity, 31),
-          },
-        ],
+        [entityVertex(entity), entityVertex(entity, 11)],
         false,
         featureId(entity, "LINE", lines.length + 1),
         layer,
@@ -183,18 +253,31 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
     }
 
     if (entity.type === "LWPOLYLINE") {
-      const eastings = entityNumbers(entity, 10)
-      const northings = entityNumbers(entity, 20)
+      if (hasBulges(entity)) {
+        recordSkipped(unsupported, "curved LWPOLYLINE")
+        continue
+      }
       const elevation = entityNumber(entity, 38, entityNumber(entity, 30))
-      const count = Math.min(eastings.length, northings.length)
-      const vertices = Array.from({ length: count }, (_, vertexIndex) => ({
-        easting: eastings[vertexIndex],
-        northing: northings[vertexIndex],
-        elevation,
-      }))
-      const closed = (entityNumber(entity, 70) & 1) === 1
+      const vertices: SurveyVertex[] = []
+      let current: SurveyVertex | null = null
+      entity.pairs.forEach((pair) => {
+        if (pair.code === 10) {
+          if (current) vertices.push(current)
+          current = { easting: pair.value ? Number(pair.value) : Number.NaN, northing: Number.NaN, elevation }
+        } else if (pair.code === 20 && current) {
+          current.northing = pair.value ? Number(pair.value) : Number.NaN
+        }
+      })
+      if (current) vertices.push(current)
+      const flags = entityNumber(entity, 70)
+      const declaredCount = entityNumber(entity, 90, vertices.length)
+      if (!Number.isInteger(flags) || declaredCount !== vertices.length) {
+        recordSkipped(invalid, entity.type)
+        continue
+      }
+      const closed = (flags & 1) === 1
       addPath(
-        vertices,
+        vertices.map((vertex) => ocsToWorld(vertex, entity)),
         closed,
         featureId(entity, closed ? "POLYGON" : "POLYLINE", lines.length + polygons.length + 1),
         layer,
@@ -203,33 +286,41 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
     }
 
     if (entity.type === "POLYLINE") {
-      const vertices: SurveyVertex[] = []
+      const vertexEntities: DxfEntity[] = []
       let nextIndex = index + 1
-
-      while (nextIndex < entities.length && entities[nextIndex].type !== "SEQEND") {
-        const vertex = entities[nextIndex]
-        if (vertex.type === "VERTEX") {
-          const easting = Number(entityValue(vertex, 10))
-          const northing = Number(entityValue(vertex, 20))
-          if (Number.isFinite(easting) && Number.isFinite(northing)) {
-            vertices.push({
-              easting,
-              northing,
-              elevation: entityNumber(vertex, 30),
-            })
-          }
-        }
+      while (nextIndex < entities.length && entities[nextIndex].type === "VERTEX") {
+        vertexEntities.push(entities[nextIndex])
         nextIndex += 1
       }
-
-      const closed = (entityNumber(entity, 70) & 1) === 1
+      const terminated = entities[nextIndex]?.type === "SEQEND"
+      index = terminated ? nextIndex : nextIndex - 1
+      const flags = entityNumber(entity, 70)
+      if (!terminated || !Number.isInteger(flags)) {
+        recordSkipped(invalid, entity.type)
+        continue
+      }
+      if (flags & (16 | 64)) {
+        recordSkipped(unsupported, "POLYLINE mesh")
+        continue
+      }
+      if ((flags & (2 | 4)) || vertexEntities.some((vertex) =>
+        hasBulges(vertex) || (entityNumber(vertex, 70) & (1 | 8 | 16)),
+      )) {
+        recordSkipped(unsupported, "curved POLYLINE")
+        continue
+      }
+      const is3d = (flags & 8) === 8
+      const vertices = vertexEntities.map((vertex) => {
+        const position = entityVertex(vertex)
+        return is3d ? position : ocsToWorld({ ...position, elevation: entityNumber(entity, 30) }, entity)
+      })
+      const closed = (flags & 1) === 1
       addPath(
         vertices,
         closed,
         featureId(entity, closed ? "POLYGON" : "POLYLINE", lines.length + polygons.length + 1),
         layer,
       )
-      index = nextIndex
       continue
     }
 
@@ -242,14 +333,14 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
       entity.type !== "VERTEX" &&
       entity.type !== "SEQEND"
     ) {
-      unsupported.set(entity.type, (unsupported.get(entity.type) || 0) + 1)
+      recordSkipped(unsupported, entity.type)
     }
   }
 
   const featureCount = points.length + lines.length + polygons.length
   if (featureCount === 0) {
     throw new Error(
-      `${fileName} has no readable POINT, INSERT, LINE, LWPOLYLINE or POLYLINE geometry.`,
+      `${fileName} has no supported model-space POINT, INSERT, LINE or straight polyline geometry. Curves, meshes and malformed entities cannot be exported.`,
     )
   }
   if (featureCount > maximumFeatures) {
@@ -260,6 +351,16 @@ function parseDxfGeometry(text: string, fileName: string): SurveyGeometryLayer {
   }
 
   const warnings: string[] = []
+  if (insertCount > 0) {
+    warnings.push(`${insertCount.toLocaleString("en-NZ")} block reference(s) read as insertion points. Block contents are not expanded.`)
+  }
+  if (paperSpaceCount > 0) {
+    warnings.push(`${paperSpaceCount.toLocaleString("en-NZ")} paper-space entities were skipped. Only model-space survey geometry is exported.`)
+  }
+  if (invalid.size > 0) {
+    const summary = Array.from(invalid, ([type, count]) => `${type} (${count.toLocaleString("en-NZ")})`).join(", ")
+    warnings.push(`Malformed or incomplete DXF geometry was skipped: ${summary}.`)
+  }
   if (unsupported.size > 0) {
     const summary = Array.from(unsupported.entries())
       .sort((first, second) => second[1] - first[1])
