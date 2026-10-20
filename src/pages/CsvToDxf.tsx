@@ -45,7 +45,9 @@ function sanitizeLayerName(code: string) {
   const cleaned = code
     .trim()
     .toUpperCase()
-    .replace(/[<>/\\":;?*|=,]/g, "_")
+    // R12 symbol names allow at most 31 ASCII letters, digits, $, _ and -.
+    .replace(/[^A-Z0-9_$-]/g, "_")
+    .slice(0, 31)
 
   return cleaned || "SURVEY_POINTS"
 }
@@ -84,11 +86,12 @@ function createDxf(
   const validPoints = points.filter((point) => point.valid)
 
   const layers = Array.from(
-    new Set(
-      validPoints.map((point) =>
+    new Set([
+      "0",
+      ...validPoints.map((point) =>
         getPointLayer(point, settings),
       ),
-    ),
+    ]),
   )
 
   const dxf: string[] = []
@@ -128,6 +131,34 @@ function createDxf(
   add(0, "SECTION")
   add(2, "TABLES")
 
+  // Define the linetype and text style referenced by the exported entities.
+  add(0, "TABLE")
+  add(2, "LTYPE")
+  add(70, 1)
+  add(0, "LTYPE")
+  add(2, "CONTINUOUS")
+  add(70, 0)
+  add(3, "Solid line")
+  add(72, 65)
+  add(73, 0)
+  add(40, 0)
+  add(0, "ENDTAB")
+
+  add(0, "TABLE")
+  add(2, "STYLE")
+  add(70, 1)
+  add(0, "STYLE")
+  add(2, "STANDARD")
+  add(70, 0)
+  add(40, 0)
+  add(41, 1)
+  add(50, 0)
+  add(71, 0)
+  add(42, settings.textHeight)
+  add(3, "txt")
+  add(4, "")
+  add(0, "ENDTAB")
+
   add(0, "TABLE")
   add(2, "LAYER")
   add(70, layers.length)
@@ -141,6 +172,10 @@ function createDxf(
   })
 
   add(0, "ENDTAB")
+  add(0, "ENDSEC")
+
+  add(0, "SECTION")
+  add(2, "BLOCKS")
   add(0, "ENDSEC")
 
   add(0, "SECTION")
