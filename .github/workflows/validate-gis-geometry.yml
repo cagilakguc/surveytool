@@ -25,3 +25,5 @@ jobs:
       - run: node --import tsx scripts/validate-dxf-geometry.mjs
       - run: node --import tsx scripts/validate-gis-geometry.mjs
       - run: python scripts/validate-gis-files.py
+      - run: node --import tsx scripts/validate-global-gis.mjs
+      - run: python scripts/validate-global-gis-files.py

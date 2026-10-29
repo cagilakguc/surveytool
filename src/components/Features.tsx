@@ -59,7 +59,7 @@ const features: Feature[] = [
     icon: Database,
     title: "Point, Line & Polygon GIS Export",
     description:
-      "Retain DXF points, open polylines and closed boundaries in Shapefile or GeoPackage datasets.",
+      "Export points, lines and polygons to Shapefile or GeoPackage using global coordinate systems.",
     to: "/tools/gis-export",
   },
   {

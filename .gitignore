@@ -26,3 +26,4 @@ dist-ssr
 # Generated EPSG catalogue
 public/data/coordinate-systems.json
 public/data/epsg-index-license.txt
+public/data/crs-definitions/

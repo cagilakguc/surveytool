@@ -9,6 +9,7 @@ import type { LandXmlDocument, PlanPoint } from "./landxml"
 import type { MapCrs } from "./mapCoordinates"
 import type { SurfaceComparison } from "./surfaceCompare"
 import { mapInputUnitError } from "./surfaceMapAnalysis"
+import { angularDegreesPerUnit } from "./globalGis"
 
 export const maximumMapFaces = 5000
 const maximumMapPoints = 2000
@@ -17,8 +18,9 @@ export function createMapTransform(crs: MapCrs) {
   if (/\+nadgrids=(?!@null(?:\s|$))/.test(crs.proj4)) throw new Error("This CRS needs a datum grid that is not included in the browser map. Use plan view, or export the file to a supported CRS.")
   const geographic = proj4(crs.proj4, "EPSG:4326")
   const mercator = proj4("EPSG:4326", "EPSG:3857")
+  const angularScale = angularDegreesPerUnit(crs)
   return (easting: number, northing: number): [number, number] => {
-    const [longitude, latitude] = geographic.forward([easting, northing])
+    const [longitude, latitude] = geographic.forward([easting * angularScale, northing * angularScale])
     if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180.000001 || Math.abs(latitude) > 85.05112878) {
       throw new Error("These coordinates cannot be placed on the background map. Check the source CRS. Areas beyond 85° latitude remain available in plan view.")
     }
@@ -27,7 +29,8 @@ export function createMapTransform(crs: MapCrs) {
 }
 
 export function validateMapLocation(crs: MapCrs, easting: number, northing: number) {
-  const [longitude, latitude] = proj4(crs.proj4, "EPSG:4326", [easting, northing])
+  const angularScale = angularDegreesPerUnit(crs)
+  const [longitude, latitude] = proj4(crs.proj4, "EPSG:4326", [easting * angularScale, northing * angularScale])
   const box = crs.bbox
   if (!box) return
   const [north, west, south, east] = box

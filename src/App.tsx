@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { lazy, Suspense } from "react"
 
 import Home from "./pages/Home"
 import Dashboard from "./pages/Dashboard"
@@ -8,12 +9,13 @@ import SurfaceCompare from "./pages/SurfaceCompare"
 import CrossSectionTool from "./pages/CrossSectionTool"
 import PavementConformance from "./pages/PavementConformance"
 import CoordinateConverter from "./pages/CoordinateConverter"
-import GisExporter from "./pages/GisExporter"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
 import Help from "./pages/Help"
 import HelpFeedbackButton from "./components/HelpFeedbackButton"
 import { AuthProvider } from "./context/AuthContext"
+
+const GisExporter = lazy(() => import("./pages/GisExporter"))
 
 function App() {
   return (
@@ -39,7 +41,7 @@ function App() {
             />
             <Route
               path="/tools/gis-export"
-              element={<GisExporter />}
+              element={<Suspense fallback={<p role="status" className="relative z-10 px-6 py-24 text-center text-slate-400">Loading GIS export…</p>}><GisExporter /></Suspense>}
             />
             <Route
               path="/tools/landxml-viewer"
