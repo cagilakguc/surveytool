@@ -43,7 +43,9 @@ const field =
   "w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300";
 const statuses = Object.keys(statusColours) as CheckStatus[];
 const format = (value: number | null, digits = 3) =>
-  value === null || !Number.isFinite(value) ? "—" : value.toFixed(digits);
+  value === null || !Number.isFinite(value)
+    ? "—"
+    : Number(value.toFixed(digits)).toFixed(digits);
 function Plan({ result }: { result: CheckResult }) {
   const data = useMemo(() => {
     const points = result.rows.filter(

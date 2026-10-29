@@ -109,6 +109,7 @@ export async function createReportExcel(report: SurveyReport) {
   };
   const summary = workbook.addWorksheet("Summary");
   summary.columns = [{ width: 36 }, { width: 90 }];
+  summary.getColumn(2).numFmt = "0.0000";
   summary.addRows([
     [report.title],
     ["Project", report.project],
@@ -183,12 +184,19 @@ export async function createReportPdf(report: SurveyReport) {
     ["Generated (UTC)", report.createdAt],
     ...report.metadata,
     ...report.summary,
-  ].map(([label, value]) => [label, String(value ?? "—")]);
+  ].map(([label, value]) => [
+    label,
+    typeof value === "number"
+      ? Number.isFinite(value)
+        ? String(Math.round(value * 1e6) / 1e6)
+        : "—"
+      : String(value ?? "—"),
+  ]);
   autoTable(doc, {
     startY: 36,
     head: [["Project / check information", "Value"]],
     body: metadata,
-    styles: { font: "SurveyReport", fontSize: 8, cellPadding: 2 },
+    styles: { font: "SurveyReport", fontSize: 8, cellPadding: 1.25 },
     headStyles: { fontStyle: "normal", fillColor: [22, 78, 99] },
     columnStyles: { 0: { cellWidth: 65 } },
     margin: { left: margin, right: margin, bottom: 15 },
