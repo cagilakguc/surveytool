@@ -93,3 +93,28 @@ npm run test:crs
 ```
 
 The CRS checks cover country aliases, national/regional grids, UTM/UPS discovery, Pacific date-line islands, polar exclusion, overlapping country names, recent-selection storage, an independent UTM checkpoint, point round trips and each converter export format.
+
+## As-built vs Design and reports
+
+`/tools/as-built-check` compares every valid XYZ point in CSV/TXT or model-space DXF geometry with a selected LandXML TIN. Choose the actual design and point-file CRSs, specify height units separately, name the common vertical datum and confirm that the measured heights use it. Supported horizontal reprojection runs before the TIN query. Heights only undergo explicit unit scaling; vertical datums are never changed. Each point is PASS, HIGH, LOW, OUTSIDE, NO_DESIGN_LEVEL, AMBIGUOUS or INVALID. Limits are inclusive. Conflicting overlapping faces and missing levels remain unassessed. Original triangle interpolation never extrapolates across holes; both XML parsers exclude invisible `F i="1"` faces. Boundary-only polygons without excluded faces require a clipped/visible-face TIN export before this new check can run.
+
+The check runs in a cancellable worker with limits of 250,000 measured points and 500,000 TIN faces. A bounded index avoids unbounded triangle-cell replication. The map and table are previews; statistics and CSV use every valid parsed point. Parser warnings identify skipped input rows/unsupported DXF geometry. PDF includes metadata, summary, plan and up to 2,000 appendix rows, explicitly labelled when truncated. Excel supports up to 100,000 rows; CSV carries the complete result set. Report text supports Latin, Greek and Cyrillic characters using the bundled licensed DejaVu Sans subset. Exact text is retained in Excel and CSV. Report libraries load only when an export is requested.
+
+The same PDF/Excel/CSV report controls are available for Surface Compare, Cross Sections and Pavement Conformance. Existing pavement matching/thickness calculations and the original CSV export remain in place for user field testing. Cross-section distances, chainage and RL stay in source units; thickness/differences are converted to mm for recognised linear units.
+
+## Saved workspaces
+
+Use **Save / reopen project** in As-built vs Design, LandXML Viewer, Surface Compare, Cross Sections, Pavement Conformance, Coordinate Converter and GIS Export. IndexedDB stores parsed files and settings on the current browser/device; `/projects` lists them. This is separate from account-backed Supabase uploads. Download `.surveytool.json` for a portable backup; reopening validates the version/tool and input shapes, restores files/settings, and recalculates results. Cross-section bundles retain drawn endpoints and surface/alignment selections. Clearing browser site data removes device saves. Blocked/quota-limited storage shows an error and portable export remains available.
+
+## Datum operation guard
+
+Canonical GIS/converter exports and as-built coordinate transformations now reject GDA94/GDA2020 changes to other datums until an explicit, verified operation is available. Same-CRS export and projections on the same underlying datum remain available. Shared ellipsoids, identical PROJ definitions or finite output are not evidence of datum equivalence. Other pairs without a documented catalogue link, conflicting zero shifts, and optional-grid/null fallback operations are blocked. Missing mandatory grids continue to stop conversion. The background-map approximation remains separate. This mitigates issue #21 without claiming that Australian conformal/distortion-grid transformations are implemented.
+
+Validation:
+
+```sh
+npm run test:datum
+npm run test:asbuilt
+```
+
+Checks include independent analytical TIN planes and exact tolerance boundaries, mixed height units, shared edges, holes, invisible faces in the actual XML worker, missing elevations, conflicting faces, malformed projects, unsafe datum pairs, unchanged source inputs, CSV formula guards, numeric Excel readback and PDF text/font output. The font is derived from DejaVu Sans; its licence is included under `public/fonts`.

@@ -226,11 +226,13 @@ function parseSurface(block, index) {
 
   const faces = []
   const faceContainer = firstTagBlock(source, "Faces")?.body ?? source
-  const faceExpression = /<(?:[\w.-]+:)?F\b[^>]*>([^<]*)<\/(?:[\w.-]+:)?F\s*>/gi
+  const faceExpression = /<(?:[\w.-]+:)?F\b([^>]*)>([^<]*)<\/(?:[\w.-]+:)?F\s*>/gi
   let faceMatch
+  let excludedFaces = 0
 
   while ((faceMatch = faceExpression.exec(faceContainer)) !== null) {
-    const ids = faceMatch[1].trim().split(/\s+/)
+    if (parseAttributes(faceMatch[1]).i?.trim() === "1") { excludedFaces += 1; continue }
+    const ids = faceMatch[2].trim().split(/\s+/)
     if (ids.length >= 3) faces.push([ids[0], ids[1], ids[2]])
   }
 
@@ -250,6 +252,8 @@ function parseSurface(block, index) {
     name: block.attributes.name ?? `Surface ${index + 1}`,
     points,
     faces,
+    excludedFaces,
+    hasBoundaryDefinitions: tagBlocks(block.body, "Boundary").length > 0,
     minElevation,
     maxElevation,
   }

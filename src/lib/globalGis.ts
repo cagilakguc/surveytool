@@ -2,6 +2,7 @@ import proj4 from "proj4"
 import { isGeographicCrs } from "./mapCoordinates"
 import type { Basemap, MapCrs } from "./mapCoordinates"
 import type { SurveyGeometryLayer, SurveyVertex } from "./surveyGeometry"
+import { datumOperationError } from "./datumOperations"
 
 export function canonicalCrsDefinition(crs: MapCrs): string {
   if (crs.note && !crs.canonicalProj4) throw new Error("The CRS catalogue has changed. Reload the page before converting GIS data.")
@@ -19,6 +20,8 @@ export function angularDegreesPerUnit(crs: MapCrs) {
 
 export function createGlobalCoordinateTransform(source: MapCrs, target: MapCrs) {
   const sameCrs = source.code === target.code
+  const operationError = datumOperationError(source, target)
+  if (operationError) throw new Error(operationError)
   let converter: proj4.Converter | null = null
   const sourceFactor = angularDegreesPerUnit(source)
   const targetFactor = angularDegreesPerUnit(target)

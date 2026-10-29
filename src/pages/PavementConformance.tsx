@@ -1,3 +1,7 @@
+import ProjectPanel from "../components/ProjectPanel"
+import ReportDownloads from "../components/ReportDownloads"
+import type { SurveyReport } from "../lib/surveyReports"
+import { assertPointLayer, record } from "../lib/projectWorkspace"
 import {
   useMemo,
   useRef,
@@ -627,6 +631,16 @@ export default function PavementConformance() {
     setError("")
   }
 
+  const structuredReport=useMemo<SurveyReport|null>(()=>comparison&&bottomFile&&topFile?{
+    title:"Pavement Conformance Report",project:`${bottomFile.name} / ${topFile.name}`,createdAt:new Date().toISOString(),
+    metadata:[["Bottom file",bottomFile.name],["Top file",topFile.name],["Target thickness (mm)",targetThicknessMm],["Tolerance (mm)",toleranceMm],["Coordinate match tolerance (m)",coordinateTolerance],["Match mode",matchMode],["CRS", "Not declared in these point files — confirm a common survey grid"],["Height units / datum","Tool assumes metres and a common vertical datum; confirm source files"]],
+    summary:[["Matched points",comparison.results.length],["Passing",comparison.results.filter((row)=>row.status==="pass").length],["Failing",comparison.results.filter((row)=>row.status==="fail").length],["Unmatched bottom points",comparison.unmatchedBottom],["Unmatched top points",comparison.unmatchedTop]],
+    columns:["Point ID","Easting","Northing","Bottom RL","Top RL","Thickness (mm)","Deviation (mm)","Status","Match method","Horizontal difference (m)","Code"],
+    rows:comparison.results.map((row)=>[row.id,row.easting,row.northing,row.bottomElevation,row.topElevation,row.thicknessMm,row.deviationMm,row.status.toUpperCase(),row.matchMethod,row.horizontalDifference,row.code]),
+    notes:["This report uses the existing pavement point-matching and thickness calculation. Unmatched points are not assessed. Both point files must use the same grid, metre units and a common vertical datum.",...bottomFile.warnings,...topFile.warnings],
+    plot:{points:comparison.results.map((row)=>({easting:row.easting,northing:row.northing,colour:row.status==="pass"?"#34d399":"#fb7185"})),legend:{PASS:"#34d399",FAIL:"#fb7185"}},
+  }:null,[comparison,bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode])
+
   function exportReport() {
     if (!comparison || comparison.results.length === 0) {
       return
@@ -693,6 +707,13 @@ export default function PavementConformance() {
       />
 
       <div className="mx-auto max-w-7xl">
+        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode}} onRestore={(state)=>{
+          for(const key of ["bottomFile","topFile"])if(state[key]!==null){const file=record(state[key]);assertPointLayer({...file,format:"CSV"})}
+          const target=Number(state.targetThicknessMm),tolerance=Number(state.toleranceMm),distance=Number(state.coordinateTolerance)
+          if(![target,tolerance,distance].every(Number.isFinite)||target<0||tolerance<0||distance<=0||!["auto","point-id","coordinate"].includes(String(state.matchMode)))throw new Error("Invalid saved pavement settings.")
+          setBottomFile(state.bottomFile as ParsedSurveyFile|null);setTopFile(state.topFile as ParsedSurveyFile|null);setTargetThicknessMm(target);setToleranceMm(tolerance);setCoordinateTolerance(distance);setMatchMode(state.matchMode as MatchMode);setError("")
+        }}/>
+
         <Link
           to="/"
           className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-cyan-300"
@@ -878,6 +899,7 @@ export default function PavementConformance() {
                     </button>
                   </div>
 
+                  <div className="mt-5"><ReportDownloads report={structuredReport}/></div>
                   <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
                     <SummaryCard
                       label="Matched"

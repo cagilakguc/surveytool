@@ -11,6 +11,7 @@ export type MapCrs = {
   note?: string
   countries?: string[]
   global?: boolean
+  datum?: string
 }
 
 export const localGridCode = "LOCAL"
@@ -19,7 +20,7 @@ let cataloguePromise: Promise<MapCrs[]> | null = null
 
 export function loadCrsCatalogue(): Promise<MapCrs[]> {
   if (!cataloguePromise) {
-    cataloguePromise = fetch(`${import.meta.env.BASE_URL}data/coordinate-systems.json?v=3`)
+    cataloguePromise = fetch(`${import.meta.env.BASE_URL}data/coordinate-systems.json?v=4`)
       .then(async (response) => {
         if (!response.ok) throw new Error("The coordinate-system catalogue could not be loaded.")
         const records: MapCrs[] = await response.json()

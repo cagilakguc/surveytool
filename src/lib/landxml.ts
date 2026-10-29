@@ -12,6 +12,8 @@ export type LandXmlSurface = {
   faces: LandXmlFace[]
   minElevation: number | null
   maxElevation: number | null
+  excludedFaces?: number
+  hasBoundaryDefinitions?: boolean
 }
 
 export type LandXmlAlignment = {
@@ -251,6 +253,7 @@ function parseSurface(surface: Element, index: number) {
 
   const faces: LandXmlFace[] = definition
     ? elementsByLocalName(definition, "F")
+        .filter((face) => face.getAttribute("i")?.trim() !== "1")
         .map((face) =>
           (face.textContent ?? "").trim().split(/\s+/),
         )
@@ -282,6 +285,8 @@ function parseSurface(surface: Element, index: number) {
       `Surface ${index + 1}`,
     points,
     faces,
+    excludedFaces: definition ? elementsByLocalName(definition, "F").filter((face) => face.getAttribute("i")?.trim() === "1").length : 0,
+    hasBoundaryDefinitions: elementsByLocalName(surface, "Boundary").length > 0,
     minElevation,
     maxElevation,
   } satisfies LandXmlSurface

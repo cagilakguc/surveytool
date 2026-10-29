@@ -15,6 +15,8 @@ import Help from "./pages/Help"
 import HelpFeedbackButton from "./components/HelpFeedbackButton"
 import { AuthProvider } from "./context/AuthContext"
 
+const AsBuiltCheck = lazy(() => import("./pages/AsBuiltCheck"))
+const LocalProjects = lazy(() => import("./pages/LocalProjects"))
 const GisExporter = lazy(() => import("./pages/GisExporter"))
 
 function App() {
@@ -30,6 +32,8 @@ function App() {
           </div>
 
           <Routes>
+            <Route path="/tools/as-built-check" element={<Suspense fallback={<p className="p-12">Loading design check…</p>}><AsBuiltCheck /></Suspense>} />
+            <Route path="/projects" element={<Suspense fallback={<p className="p-12">Loading projects…</p>}><LocalProjects /></Suspense>} />
             <Route path="/help" element={<Help />} />
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />

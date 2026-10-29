@@ -54,8 +54,13 @@ export function buildGisMapData(crs: MapCrs, layer: SurveyGeometryLayer): Survey
   if (layer.points.length) groups.push({ id: "gis-points", label: `Points (${layer.points.length.toLocaleString()})`, colour: "#22d3ee" })
   for (const point of layer.points) {
     if (!canDraw(1)) continue
-    features.push(new Feature({ geometry: new Point(project(point.easting, point.northing)), group: "gis-points", colour: "#22d3ee", name: `${point.id}${point.code ? ` · ${point.code}` : ""}`, ...point }))
+    features.push(new Feature({ geometry: new Point(project(point.easting, point.northing)), group: layer.pointColours ? `status-${point.code}` : "gis-points", colour: layer.pointColours?.[point.code] ?? "#22d3ee", name: `${point.id}${point.code ? ` · ${point.code}` : ""}`, ...point }))
   }
   if (!features.length) throw new Error("The geometry is too large for the bounded map preview. All features remain available for export.")
+  if (layer.pointColours) {
+    const pointGroup = groups.findIndex((group) => group.id === "gis-points")
+    if (pointGroup >= 0) groups.splice(pointGroup, 1)
+    for (const [status, colour] of Object.entries(layer.pointColours)) groups.push({ id: `status-${status}`, label: status, colour })
+  }
   return { features, extent, groups, note: features.length < total ? `Map preview: ${features.length.toLocaleString()} of ${total.toLocaleString()} complete features. Export retains every feature and vertex.` : "" }
 }

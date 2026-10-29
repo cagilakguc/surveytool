@@ -1,3 +1,7 @@
+import ProjectPanel from "../components/ProjectPanel"
+import { assertDocument } from "../lib/projectWorkspace"
+import { mapProjectKey } from "../lib/useMapProject"
+import { readMapSettings } from "../lib/mapCoordinates"
 import {
   lazy,
   Suspense,
@@ -213,6 +217,14 @@ export default function LandXmlViewer() {
             Processed privately in your browser
           </div>
         </div>
+
+        <ProjectPanel tool="landxml" disabled={isReading} state={{document,previewMode,showPreview,mapSettings:mapProject.settings}} onRestore={(state)=>{
+          if(state.document!==null)assertDocument(state.document)
+          const next=state.document as LandXmlDocument|null
+          if(!["plan","map"].includes(String(state.previewMode)))throw new Error("Invalid saved preview mode.")
+          if(next){const key=mapProjectKey([{id:"file",label:"LandXML file",document:next}]);mapProject.restoreSettings(key,readMapSettings("restore",{getItem:()=>JSON.stringify(state.mapSettings)}))}
+          setDocument(next);setPreviewMode(state.previewMode as "plan"|"map");setShowPreview(state.showPreview===true);setError("")
+        }}/>
 
         <div
           onDragEnter={(event) => {

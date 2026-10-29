@@ -1,3 +1,9 @@
+import ProjectPanel from "../components/ProjectPanel"
+import ReportDownloads from "../components/ReportDownloads"
+import type { SurveyReport } from "../lib/surveyReports"
+import { assertDocument } from "../lib/projectWorkspace"
+import { mapProjectKey } from "../lib/useMapProject"
+import { readMapSettings } from "../lib/mapCoordinates"
 import {
   lazy,
   Suspense,
@@ -301,6 +307,15 @@ export default function SurfaceCompare() {
   const comparison = comparisonResult.comparison
   const visibleError = error || coordinateError || comparisonResult.message
 
+  const report = useMemo<SurveyReport|null>(()=>comparison&&existing&&design?{
+    title:"Surface Compare Report",project:existing.projectName,createdAt:new Date().toISOString(),
+    metadata:[["Existing file",existing.fileName],["Design file",design.fileName],["Existing surface",existing.surfaces[existingIndex].name],["Design surface",design.surfaces[designIndex].name],["Existing CRS",existingSelection?.code||"Not specified"],["Design CRS",designSelection?.code||"Not specified"],["Source grid units",existing.units],["Resolution",resolution]],
+    summary:[["Compared area (m²)",comparison.comparedArea],["Cut volume (m³)",comparison.cutVolume],["Fill volume (m³)",comparison.fillVolume],["Net volume (m³)",comparison.netVolume],["Minimum difference (m)",comparison.minDifference],["Maximum difference (m)",comparison.maxDifference],["Mean difference (m)",comparison.averageDifference],["Samples",comparison.sampleCount]],
+    columns:["Cell easting (source grid)","Cell northing (source grid)","Design - existing (m)"],rows:comparison.cells.map((cell)=>[cell.easting,cell.northing,cell.difference]),
+    notes:["Volumes are sampled grid estimates, not exact TIN intersection volumes. Results use metres, square metres and cubic metres; X/Y and cell spacing stay in the source grid.","Both surfaces must share a compatible horizontal grid, linear units and vertical datum. No vertical datum transformation is applied.",...existing.warnings,...design.warnings],
+    plot:{points:comparison.cells.map((cell)=>({easting:cell.easting,northing:cell.northing,colour:cell.difference<0?"#fb7185":"#22d3ee"})),legend:{CUT:"#fb7185",FILL:"#22d3ee"}},
+  }:null,[comparison,existing,design,existingIndex,designIndex,existingSelection?.code,designSelection?.code,resolution])
+
   function loadDemo() {
     abortRef.current?.abort()
     setExisting(parseLandXml(demoXml("Existing Ground", 0), "demo-existing.xml"))
@@ -346,6 +361,14 @@ export default function SurfaceCompare() {
           </div>
         </div>
 
+        <ProjectPanel tool="surfaces" disabled={loadingTarget!==null} state={{existing,design,existingIndex,designIndex,resolution,mapSettings:mapProject.settings}} onRestore={(state)=>{
+          for(const key of ["existing","design"])if(state[key]!==null)assertDocument(state[key])
+          const a=state.existing as LandXmlDocument|null,b=state.design as LandXmlDocument|null,ai=Number(state.existingIndex),bi=Number(state.designIndex),r=Number(state.resolution)
+          if(!Number.isInteger(ai)||!Number.isInteger(bi)||ai<0||bi<0||(a&&ai>=a.surfaces.length)||(b&&bi>=b.surfaces.length)||!Number.isFinite(r)||r<10||r>300)throw new Error("Invalid saved surface settings.")
+          const files=[...(a?[{id:"existing",label:"Existing surface",document:a}]:[]),...(b?[{id:"design",label:"Design surface",document:b}]:[])]
+          mapProject.restoreSettings(mapProjectKey(files),readMapSettings("restore",{getItem:()=>JSON.stringify(state.mapSettings)}))
+          setExisting(a);setDesign(b);setExistingIndex(ai);setDesignIndex(bi);setResolution(r);setAnalysisVersion(0);setError("")
+        }}/>
         <div className="mt-10 grid gap-5 lg:grid-cols-2">
           <FilePanel
             label="1 · Existing surface file"
@@ -453,6 +476,7 @@ export default function SurfaceCompare() {
                         Results
                       </p>
                       <h2 className="mt-2 text-2xl font-semibold">Cut, fill and thickness</h2>
+                      <div className="mt-4"><ReportDownloads report={report}/></div>
                     </div>
                     <span className="hidden items-center gap-2 text-sm text-slate-400 sm:flex">
                       <Scale size={18} />

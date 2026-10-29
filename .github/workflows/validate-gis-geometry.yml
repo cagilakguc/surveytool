@@ -21,6 +21,8 @@ jobs:
       - run: npm run build
       - run: npm run test:maps
       - run: npm run test:crs
+      - run: npm run test:datum
+      - run: npm run test:asbuilt
       - run: npm run lint
       - run: npm install --no-save --package-lock=false sql.js@1.14.1 tsx@4.23.15
       - run: node --import tsx scripts/validate-dxf-geometry.mjs

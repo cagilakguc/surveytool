@@ -1,3 +1,6 @@
+import ReportDownloads from "./ReportDownloads"
+import type { SurveyReport } from "../lib/surveyReports"
+import { metresPerLinearUnit } from "../lib/mapCoordinates"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 import { X } from "lucide-react"
@@ -5,9 +8,13 @@ import { X } from "lucide-react"
 import type { LandXmlAlignment, LandXmlDocument, LandXmlSurface, PlanPoint } from "../lib/landxml"
 import type { SurveyPoint, SurveyPointLayer } from "../lib/surveyPoints"
 
+export type SectionSettings = { alignmentName:string;topSurfaceName:string;bottomSurfaceName:string;referenceSurfaceName:string;corridor:number;line:SectionLine|null }
+
 type Props = {
   document: LandXmlDocument
   pointLayers: SurveyPointLayer[]
+  settings?:SectionSettings|null
+  onSettingsChange?:(settings:SectionSettings)=>void
 }
 
 type XY = { x: number; y: number }
@@ -269,13 +276,13 @@ function formatChainage(value: number | null) {
   return `${kilometres}+${(value - kilometres * 1000).toFixed(3).padStart(7, "0")}`
 }
 
-function calculateThickness(samples: Sample[], topIndex: number, bottomIndex: number): ThicknessStats | null {
-  if (topIndex < 0 || bottomIndex < 0) return null
+function calculateThickness(samples: Sample[], topIndex: number, bottomIndex: number, scale:number|null): ThicknessStats | null {
+  if (topIndex < 0 || bottomIndex < 0 || scale===null) return null
   const values: number[] = []
   samples.forEach((sample) => {
     const top = sample.values[topIndex]
     const bottom = sample.values[bottomIndex]
-    if (top !== null && bottom !== null) values.push((top - bottom) * 1000)
+    if (top !== null && bottom !== null) values.push((top - bottom) * scale * 1000)
   })
   if (!values.length) return null
   let minimum = Number.POSITIVE_INFINITY
@@ -306,35 +313,35 @@ function projectPointToSection(point: SurveyPoint, line: SectionLine, corridor: 
   return { distance: ratio * length, offset }
 }
 
-export default function LandXmlCrossSection({ document, pointLayers }: Props) {
+export default function LandXmlCrossSection({ document, pointLayers, settings, onSettingsChange }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ pointerId: number; start: PlanPoint } | null>(null)
-  const [alignmentName, setAlignmentName] = useState(document.alignments[0]?.name ?? "")
-  const [topSurfaceName, setTopSurfaceName] = useState(document.surfaces[0]?.name ?? "")
-  const [bottomSurfaceName, setBottomSurfaceName] = useState(document.surfaces[1]?.name ?? document.surfaces[0]?.name ?? "")
-  const [referenceSurfaceName, setReferenceSurfaceName] = useState(document.surfaces[0]?.name ?? "")
-  const [corridor, setCorridor] = useState(1)
-  const [line, setLine] = useState<SectionLine | null>(null)
+  const [localSettings,setLocalSettings]=useState<SectionSettings>({alignmentName:document.alignments[0]?.name??"",topSurfaceName:document.surfaces[0]?.name??"",bottomSurfaceName:document.surfaces[1]?.name??document.surfaces[0]?.name??"",referenceSurfaceName:document.surfaces[0]?.name??"",corridor:1,line:null})
+  const current=settings??localSettings
+  const {alignmentName,topSurfaceName,bottomSurfaceName,referenceSurfaceName,corridor,line}=current
+  const update=(change:Partial<SectionSettings>)=>{const next={...current,...change};if(onSettingsChange)onSettingsChange(next);else setLocalSettings(next)}
+  const setAlignmentName=(value:string)=>update({alignmentName:value})
+  const setTopSurfaceName=(value:string)=>update({topSurfaceName:value})
+  const setBottomSurfaceName=(value:string)=>update({bottomSurfaceName:value})
+  const setReferenceSurfaceName=(value:string)=>update({referenceSurfaceName:value})
+  const setCorridor=(value:number)=>update({corridor:value})
+  const setLine=(value:SectionLine|null)=>update({line:value})
+  const linearScale=metresPerLinearUnit(document.units)
   const [isDrawing, setIsDrawing] = useState(false)
-  const [showResult, setShowResult] = useState(false)
+  const [showResult, setShowResult] = useState(Boolean(settings?.line))
+  useEffect(()=>{if(settings?.line&&!isDrawing)setShowResult(true)},[settings?.line,isDrawing])
 
   const bounds = useMemo(() => boundsFor(document, pointLayers), [document, pointLayers])
   const mapProjection = useMemo(() => (bounds ? projection(bounds) : null), [bounds])
   const surfaceIndexes = useMemo(() => document.surfaces.map(createSurfaceIndex), [document.surfaces])
   const alignment = document.alignments.find((item) => item.name === alignmentName)
 
-  useEffect(() => {
-    const names = document.alignments.map((item) => item.name)
-    if (!names.length) setAlignmentName("")
-    else if (!names.includes(alignmentName)) setAlignmentName(names[0])
-  }, [alignmentName, document.alignments])
-
-  useEffect(() => {
-    const names = document.surfaces.map((surface) => surface.name)
-    if (!names.includes(topSurfaceName)) setTopSurfaceName(names[0] ?? "")
-    if (!names.includes(bottomSurfaceName)) setBottomSurfaceName(names[1] ?? names[0] ?? "")
-    if (!names.includes(referenceSurfaceName)) setReferenceSurfaceName(names[0] ?? "")
-  }, [bottomSurfaceName, document.surfaces, referenceSurfaceName, topSurfaceName])
+  const updateRef=useRef(update);updateRef.current=update
+  useEffect(()=>{
+    const surfaces=document.surfaces.map((surface)=>surface.name),alignments=document.alignments.map((item)=>item.name)
+    const next={alignmentName:alignmentName&&!alignments.includes(alignmentName)?alignments[0]??"":alignmentName,topSurfaceName:surfaces.includes(topSurfaceName)?topSurfaceName:surfaces[0]??"",bottomSurfaceName:surfaces.includes(bottomSurfaceName)?bottomSurfaceName:surfaces[1]??surfaces[0]??"",referenceSurfaceName:referenceSurfaceName&&!surfaces.includes(referenceSurfaceName)?surfaces[0]??"":referenceSurfaceName}
+    if(next.alignmentName!==alignmentName||next.topSurfaceName!==topSurfaceName||next.bottomSurfaceName!==bottomSurfaceName||next.referenceSurfaceName!==referenceSurfaceName)updateRef.current(next)
+  },[document.alignments,document.surfaces,alignmentName,topSurfaceName,bottomSurfaceName,referenceSurfaceName])
 
   const result = useMemo(() => {
     if (!line || isDrawing) return null
@@ -360,14 +367,14 @@ export default function LandXmlCrossSection({ document, pointLayers }: Props) {
           distance: projected.distance,
           offset: projected.offset,
           referenceLevel,
-          differenceMm: referenceLevel === null ? null : (point.elevation - referenceLevel) * 1000,
+          differenceMm: referenceLevel === null || linearScale === null ? null : (point.elevation - referenceLevel) * linearScale * 1000,
         })
       })
     })
     sectionPoints.sort((a, b) => a.distance - b.distance)
 
     return { length, samples, station: stationForSection(alignment, line), sectionPoints }
-  }, [alignment, corridor, document.surfaces, isDrawing, line, pointLayers, referenceSurfaceName, surfaceIndexes])
+  }, [alignment, corridor, document.surfaces, isDrawing, line, pointLayers, referenceSurfaceName, surfaceIndexes, linearScale])
 
   const thickness = useMemo(() => {
     if (!result) return null
@@ -375,8 +382,18 @@ export default function LandXmlCrossSection({ document, pointLayers }: Props) {
       result.samples,
       document.surfaces.findIndex((surface) => surface.name === topSurfaceName),
       document.surfaces.findIndex((surface) => surface.name === bottomSurfaceName),
+      linearScale,
     )
-  }, [bottomSurfaceName, document.surfaces, result, topSurfaceName])
+  }, [bottomSurfaceName, document.surfaces, result, topSurfaceName, linearScale])
+
+  const report=useMemo<SurveyReport|null>(()=>result?{
+    title:"Cross-section Report",project:document.projectName,createdAt:new Date().toISOString(),
+    metadata:[["LandXML file",document.fileName],["Measured point files",pointLayers.map((layer)=>layer.name).join("; ")],["Alignment",alignmentName],["As-built reference",referenceSurfaceName],["Top / bottom surfaces",`${topSurfaceName} / ${bottomSurfaceName}`],["Source linear units",document.units],["Section length (source units)",result.length],["Corridor each side (source units)",corridor],["Chainage (source units)",result.station?.chainage??null],["Section start E/N",line?`${line.start.easting}, ${line.start.northing}`:""],["Section end E/N",line?`${line.end.easting}, ${line.end.northing}`:""]],
+    summary:[["Measured points within corridor",result.sectionPoints.length],["Thickness samples",thickness?.sampleCount??0],["Minimum thickness (mm)",thickness?.minimum??null],["Maximum thickness (mm)",thickness?.maximum??null],["Mean thickness (mm)",thickness?.average??null]],
+    columns:["Type","Surface / layer","Point","Distance (source units)","Offset (source units)","RL (source units)","Reference RL (source units)","Difference (mm)"],
+    rows:[...result.samples.flatMap((sample)=>sample.values.map((level,index)=>["TIN sample",document.surfaces[index].name,"",sample.distance,null,level,null,null])),...result.sectionPoints.map((point)=>["Measured point",point.layerName,point.id,point.distance,point.offset,point.elevation,point.referenceLevel,point.differenceMm])],
+    notes:["Surface values are sampled along the drawn section. Measured points use the selected corridor and reference TIN. Blank design levels are unassessed.","Inputs must share horizontal coordinates, source linear units and a vertical datum. Coordinates, chainage, RL and offsets remain in source units; thickness and level differences use mm where units are recognised.",...document.warnings,...pointLayers.flatMap((layer)=>layer.warnings)],
+  }:null,[result,document,pointLayers,alignmentName,referenceSurfaceName,topSurfaceName,bottomSurfaceName,corridor,line,thickness])
 
   function pointFromEvent(event: ReactPointerEvent<SVGSVGElement>) {
     if (!svgRef.current || !mapProjection) return null
@@ -430,7 +447,7 @@ export default function LandXmlCrossSection({ document, pointLayers }: Props) {
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Cross-section map</p>
           <h2 className="mt-2 text-2xl font-semibold">Drag across surfaces and as-built points</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-400">Measured points within the section corridor are plotted against the selected reference TIN.</p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">Measured points within the section corridor are plotted against the selected reference TIN. Geometry, RL and chainage use the LandXML source units; level differences and thickness use mm. Confirm measured files share the grid, source units and vertical datum.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <SelectControl label="Alignment" value={alignmentName} onChange={setAlignmentName} options={document.alignments.map((item) => item.name)} emptyLabel="No alignment" />
@@ -438,7 +455,7 @@ export default function LandXmlCrossSection({ document, pointLayers }: Props) {
           <SelectControl label="Bottom surface" value={bottomSurfaceName} onChange={setBottomSurfaceName} options={document.surfaces.map((item) => item.name)} />
           <SelectControl label="As-built reference" value={referenceSurfaceName} onChange={setReferenceSurfaceName} options={document.surfaces.map((item) => item.name)} emptyLabel="No reference" />
           <label className="text-sm text-slate-300">
-            <span className="mb-2 block">Point corridor ±m</span>
+            <span className="mb-2 block">Point corridor ±source units</span>
             <input type="number" min="0.05" max="20" step="0.05" value={corridor} onChange={(event) => setCorridor(Math.max(0.05, Number(event.target.value) || 0.05))} className="w-full min-w-32 rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-white outline-none focus:border-cyan-400" />
           </label>
         </div>
@@ -525,13 +542,14 @@ export default function LandXmlCrossSection({ document, pointLayers }: Props) {
                 <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Cross section</p>
                 <h3 className="mt-2 text-2xl font-semibold">CH {formatChainage(result.station?.chainage ?? null)}</h3>
                 <p className="mt-2 text-sm text-slate-400">
-                  Section length {result.length.toFixed(3)} m · Alignment offset {result.station ? `${result.station.offset.toFixed(3)} m` : "—"}
-                  {result.station?.sectionDistance !== null && result.station?.sectionDistance !== undefined ? ` · Alignment at section offset ${result.station.sectionDistance.toFixed(3)} m` : ""}
+                  Section length {result.length.toFixed(3)} source units · Alignment offset {result.station ? `${result.station.offset.toFixed(3)} source units` : "—"}
+                  {result.station?.sectionDistance !== null && result.station?.sectionDistance !== undefined ? ` · Alignment at section offset ${result.station.sectionDistance.toFixed(3)} source units` : ""}
                 </p>
               </div>
               <button type="button" aria-label="Close cross section" onClick={() => setShowResult(false)} className="rounded-xl border border-white/10 p-2 text-slate-300 transition hover:bg-white/10"><X size={20} /></button>
             </div>
 
+            <div className="mt-5"><ReportDownloads report={report}/></div>
             <div className="mt-6 grid gap-5 xl:grid-cols-2">
               <ThicknessSummary stats={thickness} topSurfaceName={topSurfaceName} bottomSurfaceName={bottomSurfaceName} />
               <AsbuiltSummary points={result.sectionPoints} referenceSurfaceName={referenceSurfaceName} corridor={corridor} />
@@ -584,7 +602,7 @@ function AsbuiltSummary({ points, referenceSurfaceName, corridor }: { points: Se
   return (
     <section className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-5">
       <h4 className="font-semibold">As-built comparison</h4>
-      <p className="mt-1 text-sm text-slate-400">Points within ±{corridor.toFixed(2)} m · reference {referenceSurfaceName || "not selected"}</p>
+      <p className="mt-1 text-sm text-slate-400">Points within ±{corridor.toFixed(2)} source units · reference {referenceSurfaceName || "not selected"}</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <StatCard label="Points" value={points.length.toLocaleString("en-NZ")} />
         <StatCard label="Minimum Δ" value={differences.length ? `${minimum.toFixed(0)} mm` : "—"} />
@@ -643,7 +661,7 @@ function ProfileChart({ surfaces, samples, length, points, pointLayers }: { surf
 
         {points.map((point, index) => (
           <circle key={`${point.layerName}-${point.id}-${index}`} cx={xAt(point.distance)} cy={yAt(point.elevation)} r="5" fill={pointColours[point.layerIndex % pointColours.length]} stroke="white" strokeWidth="1.5">
-            <title>{`${point.layerName} · ${point.id} · offset ${point.offset.toFixed(3)} m · RL ${point.elevation.toFixed(3)}${point.differenceMm === null ? "" : ` · Δ ${point.differenceMm.toFixed(0)} mm`}`}</title>
+            <title>{`${point.layerName} · ${point.id} · offset ${point.offset.toFixed(3)} source units · RL ${point.elevation.toFixed(3)}${point.differenceMm === null ? "" : ` · Δ ${point.differenceMm.toFixed(0)} mm`}`}</title>
           </circle>
         ))}
       </svg>
@@ -673,7 +691,7 @@ function AsbuiltTable({ points }: { points: SectionSurveyPoint[] }) {
           <tbody className="divide-y divide-white/5">
             {points.slice(0, 200).map((point, index) => (
               <tr key={`${point.layerName}-${point.id}-${index}`} className="text-slate-300">
-                <td className="px-4 py-3">{point.layerName}</td><td className="px-4 py-3 font-medium text-white">{point.id}</td><td className="px-4 py-3">{point.code || "—"}</td><td className="px-4 py-3">{point.distance.toFixed(3)} m</td><td className="px-4 py-3">{point.offset >= 0 ? "+" : ""}{point.offset.toFixed(3)} m</td><td className="px-4 py-3">{point.elevation.toFixed(3)}</td><td className="px-4 py-3">{point.referenceLevel === null ? "—" : point.referenceLevel.toFixed(3)}</td><td className={`px-4 py-3 font-semibold ${point.differenceMm === null ? "text-slate-500" : Math.abs(point.differenceMm) <= 20 ? "text-emerald-300" : "text-amber-300"}`}>{point.differenceMm === null ? "—" : `${point.differenceMm >= 0 ? "+" : ""}${point.differenceMm.toFixed(0)} mm`}</td>
+                <td className="px-4 py-3">{point.layerName}</td><td className="px-4 py-3 font-medium text-white">{point.id}</td><td className="px-4 py-3">{point.code || "—"}</td><td className="px-4 py-3">{point.distance.toFixed(3)} source units</td><td className="px-4 py-3">{point.offset >= 0 ? "+" : ""}{point.offset.toFixed(3)} source units</td><td className="px-4 py-3">{point.elevation.toFixed(3)}</td><td className="px-4 py-3">{point.referenceLevel === null ? "—" : point.referenceLevel.toFixed(3)}</td><td className={`px-4 py-3 font-semibold ${point.differenceMm === null ? "text-slate-500" : Math.abs(point.differenceMm) <= 20 ? "text-emerald-300" : "text-amber-300"}`}>{point.differenceMm === null ? "—" : `${point.differenceMm >= 0 ? "+" : ""}${point.differenceMm.toFixed(0)} mm`}</td>
               </tr>
             ))}
           </tbody>
