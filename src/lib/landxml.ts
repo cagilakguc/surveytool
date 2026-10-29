@@ -27,6 +27,7 @@ export type LandXmlDocument = {
   projectName: string
   applicationName: string
   units: string
+  coordinateSystem?: Record<string, string>
   surfaces: LandXmlSurface[]
   alignments: LandXmlAlignment[]
   cogoPoints: Array<PlanPoint & { name: string }>
@@ -314,6 +315,7 @@ export function parseLandXml(
   const metric = firstElementByLocalName(xml, "Metric")
   const imperial = firstElementByLocalName(xml, "Imperial")
   const unitElement = metric ?? imperial
+  const coordinateSystem = firstElementByLocalName(xml, "CoordinateSystem")
 
   const surfaces = elementsByLocalName(xml, "Surface").map(
     parseSurface,
@@ -383,6 +385,9 @@ export function parseLandXml(
     units:
       unitElement?.getAttribute("linearUnit") ??
       (metric ? "metric" : imperial ? "imperial" : "Unknown"),
+    coordinateSystem: coordinateSystem
+      ? Object.fromEntries(Array.from(coordinateSystem.attributes, (attribute) => [attribute.localName, attribute.value]))
+      : undefined,
     surfaces,
     alignments,
     cogoPoints,

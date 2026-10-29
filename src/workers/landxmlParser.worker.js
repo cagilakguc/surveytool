@@ -319,6 +319,7 @@ function parseLandXmlText(xmlText, fileName) {
     projectName: project.name ?? "Unnamed project",
     applicationName: application.name ?? application.manufacturer ?? "Not specified",
     units: unit?.linearUnit ?? (metric ? "metric" : imperial ? "imperial" : "Unknown"),
+    coordinateSystem: firstTagAttributes(xmlText, "CoordinateSystem") ?? undefined,
     surfaces,
     alignments,
     cogoPoints,

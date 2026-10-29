@@ -7,11 +7,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predev": "node scripts/build-crs-catalogue.mjs",
+    "prebuild": "node scripts/build-crs-catalogue.mjs",
+    "test:maps": "node --import tsx scripts/validate-survey-maps.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
     "lucide-react": "^1.23.0",
+    "ol": "^10.11.0",
+    "ol-mapbox-style": "^13.8.0",
+    "proj4": "^2.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
@@ -24,8 +30,10 @@
     "@types/react-dom": "^19.2.3",
     "@vercel/node": "^5.8.23",
     "@vitejs/plugin-react": "^6.0.3",
+    "epsg-index": "^2.0.0",
     "oxlint": "^1.71.0",
     "tailwindcss": "^4.3.2",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   }
