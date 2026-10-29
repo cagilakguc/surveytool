@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { Link } from "react-router-dom"
 import {
@@ -11,11 +11,11 @@ import {
 } from "lucide-react"
 
 import PageSeo from "../components/PageSeo"
-import {
-  coordinateSystems,
-  getCoordinateSystem,
-} from "../lib/nzCoordinates"
-import type { CoordinateReferenceSystem } from "../lib/nzCoordinates"
+import CrsPicker from "../components/CrsPicker"
+import { isGeographicCrs, loadCrsCatalogue } from "../lib/mapCoordinates"
+import type { MapCrs, Basemap } from "../lib/mapCoordinates"
+import { loadGisCrsDefinition } from "../lib/gisCrs"
+import { readGisPreferences, saveGisPreferences, transformGlobalSurveyGeometry } from "../lib/globalGis"
 import {
   createGeometryGeoPackage,
   createGeometryShapefileZip,
@@ -24,12 +24,13 @@ import {
   geometryFeatureCount,
   geometryVertexCount,
   parseSurveyGeometryFile,
-  transformSurveyGeometryLayer,
 } from "../lib/surveyGeometry"
 import type {
   SurveyGeometryLayer,
   SurveyVertex,
 } from "../lib/surveyGeometry"
+
+const SurveyMap = lazy(() => import("../components/SurveyMap"))
 
 const maximumFileSize = 50 * 1024 * 1024
 
@@ -41,6 +42,8 @@ type PreviewRow = {
   code: string
   vertices: number
   elevation: string
+  x: number | null
+  y: number | null
 }
 
 function downloadBinary(
@@ -56,7 +59,7 @@ function downloadBinary(
   document.body.appendChild(link)
   link.click()
   link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return { url, fileName }
 }
 
 function safeFileName(value: string) {
@@ -89,6 +92,7 @@ function createPreviewRows(layer: SurveyGeometryLayer) {
       code: point.code,
       vertices: 1,
       elevation: point.elevation.toFixed(4),
+      x: point.easting, y: point.northing,
     })
   })
 
@@ -99,6 +103,7 @@ function createPreviewRows(layer: SurveyGeometryLayer) {
       code: line.code,
       vertices: line.vertices.length,
       elevation: elevationRange(line.vertices),
+      x: line.vertices[0]?.easting ?? null, y: line.vertices[0]?.northing ?? null,
     })
   })
 
@@ -110,6 +115,7 @@ function createPreviewRows(layer: SurveyGeometryLayer) {
       code: polygon.code,
       vertices: vertices.length,
       elevation: elevationRange(vertices),
+      x: vertices[0]?.easting ?? null, y: vertices[0]?.northing ?? null,
     })
   })
 
@@ -117,32 +123,49 @@ function createPreviewRows(layer: SurveyGeometryLayer) {
 }
 
 export default function GisExporter() {
-  const [sourceCrs, setSourceCrs] =
-    useState<CoordinateReferenceSystem>("EPSG:2105")
-  const [targetCrs, setTargetCrs] =
-    useState<CoordinateReferenceSystem>("EPSG:2193")
-  const [format, setFormat] = useState<GisFormat>("SHAPEFILE")
+  const [preferences, setPreferences] = useState(readGisPreferences)
+  const { source: sourceCrs, target: targetCrs, format } = preferences
+  const setSourceCrs = (source: string) => setPreferences((previous) => ({ ...previous, source }))
+  const setTargetCrs = (target: string) => setPreferences((previous) => ({ ...previous, target }))
+  const setFormat = (format: GisFormat) => setPreferences((previous) => ({ ...previous, format }))
+  const [catalogue, setCatalogue] = useState<MapCrs[]>([])
+  const [catalogueError, setCatalogueError] = useState("")
+  const [catalogueAttempt, setCatalogueAttempt] = useState(0)
+  const [storageFailed, setStorageFailed] = useState(false)
+  useEffect(() => { setStorageFailed(!saveGisPreferences(preferences)) }, [preferences])
+  useEffect(() => {
+    let active = true
+    setCatalogueError("")
+    loadCrsCatalogue().then((entries) => { if (active) setCatalogue(entries) }).catch((error) => {
+      if (active) setCatalogueError(error instanceof Error ? error.message : "Coordinate systems could not be loaded.")
+    })
+    return () => { active = false }
+  }, [catalogueAttempt])
   const [geometryLayer, setGeometryLayer] =
     useState<SurveyGeometryLayer | null>(null)
   const [isReading, setIsReading] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState("")
+  const [preparedDownload, setPreparedDownload] = useState<{ url: string; fileName: string } | null>(null)
+  useEffect(() => {
+    setPreparedDownload(null)
+  }, [geometryLayer, sourceCrs, targetCrs, format])
+  useEffect(() => { setError("") }, [sourceCrs, targetCrs, format])
+  useEffect(() => () => {
+    if (preparedDownload) URL.revokeObjectURL(preparedDownload.url)
+  }, [preparedDownload])
 
-  const sourceSystem = getCoordinateSystem(sourceCrs)
-  const targetSystem = getCoordinateSystem(targetCrs)
-
-  const convertedLayer = useMemo(() => {
-    if (!geometryLayer) return null
-    try {
-      return transformSurveyGeometryLayer(
-        geometryLayer,
-        sourceCrs,
-        targetCrs,
-      )
-    } catch {
-      return null
-    }
-  }, [geometryLayer, sourceCrs, targetCrs])
+  const sourceSystem = catalogue.find((entry) => entry.code === sourceCrs)
+  const targetSystem = catalogue.find((entry) => entry.code === targetCrs)
+  const catalogueLoading = catalogue.length === 0 && !catalogueError
+  const conversion = useMemo(() => {
+    if (!geometryLayer || !sourceSystem || !targetSystem) return { layer: null, error: "" }
+    try { return { layer: transformGlobalSurveyGeometry(geometryLayer, sourceSystem, targetSystem), error: "" } }
+    catch (error) { return { layer: null, error: error instanceof Error ? error.message : "The selected coordinate conversion could not be completed." } }
+  }, [geometryLayer, sourceSystem, targetSystem])
+  const convertedLayer = conversion.layer
+  const visibleError = error || catalogueError || conversion.error
+  const coordinateDecimals = targetSystem && isGeographicCrs(targetSystem) ? 9 : 4
 
   const preview = useMemo(
     () => convertedLayer ? createPreviewRows(convertedLayer) : [],
@@ -201,38 +224,36 @@ export default function GisExporter() {
   }
 
   async function exportFile() {
-    if (!geometryLayer || !convertedLayer) return
+    if (!geometryLayer || !convertedLayer || !targetSystem) return
 
     setIsExporting(true)
     setError("")
     const baseName = safeFileName(geometryLayer.name)
-    const crsName = targetSystem.shortName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
+    const crsName = targetSystem.code.toLowerCase().replace(":", "-")
 
     try {
+      const outputDefinition = await loadGisCrsDefinition(targetSystem)
       if (format === "SHAPEFILE") {
         const content = createGeometryShapefileZip(
           convertedLayer,
-          targetCrs,
+          outputDefinition,
           `${baseName}-${crsName}`,
         )
-        downloadBinary(
+        setPreparedDownload(downloadBinary(
           content,
           "application/zip",
           `${baseName}-${crsName}-shapefiles.zip`,
-        )
+        ))
       } else {
         const content = await createGeometryGeoPackage(
           convertedLayer,
-          targetCrs,
+          outputDefinition,
         )
-        downloadBinary(
+        setPreparedDownload(downloadBinary(
           content,
           "application/geopackage+sqlite3",
           `${baseName}-${crsName}.gpkg`,
-        )
+        ))
       }
     } catch (caughtError) {
       setError(
@@ -256,7 +277,7 @@ export default function GisExporter() {
     <div className="relative z-10 min-h-screen px-6 py-20 md:py-24">
       <PageSeo
         title="Survey DXF to Shapefile & GeoPackage Export | SurveyTool.io"
-        description="Convert CSV, TXT or DXF survey geometry into point, line and polygon Shapefiles or GeoPackage. Reproject Mount Eden, NZTM and NZGD2000 coordinates in your browser."
+        description="Convert CSV, TXT and DXF points, lines and polygons into Shapefile or GeoPackage. Search global EPSG coordinate systems and reproject GIS geometry in your browser."
         canonicalUrl="https://www.surveytool.io/tools/gis-export"
       />
 
@@ -291,18 +312,12 @@ export default function GisExporter() {
         </div>
 
         <section className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 md:p-8">
-          <div className="grid gap-6 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
-            <CrsSelect
-              label="Input coordinate system"
-              value={sourceCrs}
-              onChange={setSourceCrs}
-            />
-            <CrsSelect
-              label="GIS output coordinate system"
-              value={targetCrs}
-              onChange={setTargetCrs}
-            />
-            <div className="flex flex-wrap gap-3">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <CrsPicker label="Input" value={sourceCrs} onChange={setSourceCrs} catalogue={catalogue} loading={catalogueLoading} disabled={isReading || isExporting} allowLocal={false} showMapNote={false} note="Choose the CRS used in the file. X = Easting/Longitude; Y = Northing/Latitude." />
+            <CrsPicker label="GIS output" value={targetCrs} onChange={setTargetCrs} catalogue={catalogue} loading={catalogueLoading} disabled={isReading || isExporting} allowLocal={false} showMapNote={false} note="Geometry is reprojected to this CRS and its definition is included in the export." />
+            <div className="flex flex-wrap gap-3 lg:col-span-2">
+              <button type="button" disabled={!sourceSystem || isReading || isExporting} onClick={() => setTargetCrs(sourceCrs)} className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold hover:bg-white/10 disabled:opacity-40">Use input CRS for output</button>
+
             <button
               type="button"
               disabled={isReading || isExporting}
@@ -328,20 +343,25 @@ export default function GisExporter() {
           <p className="mt-4 text-sm text-slate-500">
             CSV and TXT create points. ASCII DXF retains POINT, INSERT, LINE,
             LWPOLYLINE and POLYLINE/VERTEX geometry. Closed polylines become polygons.
-            Heights retain the input vertical datum.
+            Z values, height units and the vertical datum are preserved. Only X/Y coordinates are reprojected.
           </p>
         </section>
 
-        {error && (
+        <p className="mt-3 text-xs text-slate-500">{storageFailed ? "Preferences could not be saved on this device." : "CRS and export preferences are saved on this device. Confirm the input CRS for each new file."}</p>
+
+        {visibleError && (
           <div
             role="alert"
             className="mt-6 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-rose-200"
           >
-            {error}
+            {visibleError}
+            {catalogueError && <button type="button" className="ml-3 underline" onClick={() => setCatalogueAttempt((value) => value + 1)}>Retry catalogue</button>}
           </div>
         )}
 
-        {geometryLayer && convertedLayer && (
+        {geometryLayer && !convertedLayer && <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">Loaded {geometryLayer.name}: {geometryLayer.points.length} points, {geometryLayer.lines.length} lines and {geometryLayer.polygons.length} polygons. Select valid input and output coordinate systems to preview and export.</section>}
+
+        {geometryLayer && convertedLayer && sourceSystem && targetSystem && (
           <div className="mt-8 space-y-8">
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
               <Metric label="File" value={geometryLayer.name} />
@@ -363,7 +383,7 @@ export default function GisExporter() {
               />
               <Metric
                 label="Transformation"
-                value={`${sourceSystem.shortName} → ${targetSystem.shortName}`}
+                value={`${sourceSystem.code} → ${targetSystem.code}`}
               />
             </section>
 
@@ -374,6 +394,17 @@ export default function GisExporter() {
                 ))}
               </section>
             )}
+
+            <section className="space-y-4" aria-label="GIS map preview">
+              <div className="flex flex-wrap items-end justify-between gap-5 rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div><h2 className="text-lg font-semibold">Geometry on the map</h2><p className="mt-1 text-xs text-slate-400">Preview in {targetSystem.code}. All geometry is included in the export.</p></div>
+                <div className="flex flex-wrap items-center gap-5">
+                  <label className="text-xs text-slate-300">Background<select aria-label="Background" value={preferences.basemap} onChange={(event) => setPreferences((previous) => ({ ...previous, basemap: event.target.value as Basemap }))} className="ml-3 rounded-xl border border-white/15 bg-slate-950 px-3 py-2 text-sm"><option value="street">Street map</option><option value="aerial">Aerial / satellite</option><option value="none">No background</option></select></label>
+                  <label className="text-xs text-slate-300">Overlay opacity · {preferences.opacity}%<input aria-label="Overlay opacity" type="range" min="0" max="100" value={preferences.opacity} onChange={(event) => setPreferences((previous) => ({ ...previous, opacity: Number(event.target.value) }))} className="mt-2 block w-40 accent-cyan-400" /></label>
+                </div>
+              </div>
+              <Suspense fallback={<p role="status" className="p-6 text-sm text-slate-400">Loading geometry map…</p>}><SurveyMap geometry={convertedLayer} crs={targetSystem} basemap={preferences.basemap} opacity={preferences.opacity} heightUnitLabel="source height units" /></Suspense>
+            </section>
 
             <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
               <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
@@ -391,7 +422,9 @@ export default function GisExporter() {
                         <th className="px-4 py-3">ID</th>
                         <th className="px-4 py-3">Code / layer</th>
                         <th className="px-4 py-3">Vertices</th>
-                        <th className="px-4 py-3">RL range</th>
+                        <th className="px-4 py-3">First X{isGeographicCrs(targetSystem) ? " / Longitude" : " / Easting"}</th>
+                        <th className="px-4 py-3">First Y{isGeographicCrs(targetSystem) ? " / Latitude" : " / Northing"}</th>
+                        <th className="px-4 py-3">Z (unchanged)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -413,6 +446,10 @@ export default function GisExporter() {
                             {row.vertices.toLocaleString("en-NZ")}
                           </td>
                           <td className="px-4 py-3 font-mono text-slate-300">
+                            {row.x?.toFixed(coordinateDecimals) ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-slate-300">{row.y?.toFixed(coordinateDecimals) ?? "—"}</td>
+                          <td className="px-4 py-3 font-mono text-slate-300">
                             {row.elevation}
                           </td>
                         </tr>
@@ -424,6 +461,7 @@ export default function GisExporter() {
 
               <div className="space-y-4">
                 <FormatCard
+                  disabled={isReading || isExporting}
                   selected={format === "SHAPEFILE"}
                   icon={FileArchive}
                   title="Shapefile ZIP"
@@ -431,6 +469,7 @@ export default function GisExporter() {
                   onSelect={() => setFormat("SHAPEFILE")}
                 />
                 <FormatCard
+                  disabled={isReading || isExporting}
                   selected={format === "GEOPACKAGE"}
                   icon={Database}
                   title="GeoPackage"
@@ -460,6 +499,7 @@ export default function GisExporter() {
                       ? "Download GeoPackage"
                       : "Download Shapefile ZIP"}
                 </button>
+                {preparedDownload && <div role="status" className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 text-sm text-emerald-100"><p className="font-semibold">Your GIS file is ready</p><a href={preparedDownload.url} download={preparedDownload.fileName} className="mt-2 block break-all underline">Download {preparedDownload.fileName}</a></div>}
               </div>
             </section>
           </div>
@@ -477,35 +517,6 @@ export default function GisExporter() {
   )
 }
 
-function CrsSelect({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: CoordinateReferenceSystem
-  onChange: (value: CoordinateReferenceSystem) => void
-}) {
-  return (
-    <label className="block text-sm text-slate-300">
-      <span className="mb-2 block">{label}</span>
-      <select
-        value={value}
-        onChange={(event) =>
-          onChange(event.target.value as CoordinateReferenceSystem)
-        }
-        className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-400"
-      >
-        {coordinateSystems.map((system) => (
-          <option key={system.id} value={system.id}>
-            {system.name} ({system.id})
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-5">
@@ -516,12 +527,14 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function FormatCard({
+  disabled,
   selected,
   icon: Icon,
   title,
   description,
   onSelect,
 }: {
+  disabled?: boolean
   selected: boolean
   icon: typeof Database
   title: string
@@ -531,6 +544,7 @@ function FormatCard({
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onSelect}
       className={`w-full rounded-2xl border p-5 text-left transition ${
         selected

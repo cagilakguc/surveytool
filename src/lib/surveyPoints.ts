@@ -17,8 +17,8 @@ const maximumPoints = 500_000
 
 const aliases = {
   id: ["id", "pointid", "point", "pointno", "pointnumber", "ptno", "number", "name"],
-  easting: ["easting", "east", "e", "x", "coordx", "xcoordinate"],
-  northing: ["northing", "north", "n", "y", "coordy", "ycoordinate"],
+  easting: ["easting", "east", "e", "x", "coordx", "xcoordinate", "longitude", "lon", "long", "lng"],
+  northing: ["northing", "north", "n", "y", "coordy", "ycoordinate", "latitude", "lat"],
   elevation: ["elevation", "level", "rl", "z", "height", "reducedlevel"],
   code: ["code", "featurecode", "description", "desc", "layer", "string"],
 }

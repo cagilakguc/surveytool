@@ -1,4 +1,6 @@
-import type { CoordinateReferenceSystem } from "./nzCoordinates"
+import { resolveGisOutputCrs, wgs84Wkt } from "./gisCrs"
+import type { GisOutputCrs, GisCrsDefinition } from "./gisCrs"
+import { crsUnitScale, isGeographicCrs } from "./mapCoordinates"
 import type {
   SurveyGeometryLayer,
   SurveyLineFeature,
@@ -11,13 +13,6 @@ const textEncoder = new TextEncoder()
 const sqlJsVersion = "1.14.1"
 const sqlJsBaseUrl = `https://cdn.jsdelivr.net/npm/sql.js@${sqlJsVersion}/dist`
 
-const projectionWkt: Record<CoordinateReferenceSystem, string> = {
-  "EPSG:2105": 'PROJCS["NZGD2000 / Mount Eden 2000",GEOGCS["NZGD2000",DATUM["New_Zealand_Geodetic_Datum_2000",SPHEROID["GRS 1980",6378137,298.257222101]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",-36.8797222222222],PARAMETER["central_meridian",174.764166666667],PARAMETER["scale_factor",0.9999],PARAMETER["false_easting",400000],PARAMETER["false_northing",800000],UNIT["metre",1],AUTHORITY["EPSG","2105"]]',
-  "EPSG:2193": 'PROJCS["NZGD2000 / New Zealand Transverse Mercator 2000",GEOGCS["NZGD2000",DATUM["New_Zealand_Geodetic_Datum_2000",SPHEROID["GRS 1980",6378137,298.257222101]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",173],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",1600000],PARAMETER["false_northing",10000000],UNIT["metre",1],AUTHORITY["EPSG","2193"]]',
-  "EPSG:4167": 'GEOGCS["NZGD2000",DATUM["New_Zealand_Geodetic_Datum_2000",SPHEROID["GRS 1980",6378137,298.257222101]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4167"]]',
-}
-
-const wgs84Wkt = 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4326"]]'
 
 type GeometryBounds = {
   minX: number
@@ -291,8 +286,9 @@ function writeAsciiField(
   alignRight: boolean,
 ) {
   target.fill(0x20, offset, offset + length)
-  const encoded = textEncoder.encode(value)
-  const source = encoded.subarray(0, length)
+  const encoded = new Uint8Array(length)
+  const { written } = textEncoder.encodeInto(value, encoded)
+  const source = encoded.subarray(0, written)
   const start = alignRight ? offset + length - source.length : offset
   target.set(source, start)
 }
@@ -447,20 +443,20 @@ function addShapeComponents(
   baseName: string,
   shapeFiles: { shp: Uint8Array; shx: Uint8Array },
   dbf: Uint8Array,
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: GisOutputCrs,
 ) {
   entries.push(
     { name: `${baseName}.shp`, data: shapeFiles.shp },
     { name: `${baseName}.shx`, data: shapeFiles.shx },
     { name: `${baseName}.dbf`, data: dbf },
-    { name: `${baseName}.prj`, data: textEncoder.encode(projectionWkt[coordinateSystem]) },
+    { name: `${baseName}.prj`, data: textEncoder.encode(resolveGisOutputCrs(coordinateSystem).wkt) },
     { name: `${baseName}.cpg`, data: textEncoder.encode("UTF-8") },
   )
 }
 
 export function createGeometryShapefileZip(
   layer: SurveyGeometryLayer,
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: GisOutputCrs,
   requestedBaseName: string,
 ) {
   const featureCount = layer.points.length + layer.lines.length + layer.polygons.length
@@ -471,7 +467,9 @@ export function createGeometryShapefileZip(
 
   const baseName = cleanBaseName(requestedBaseName)
   const entries: Array<{ name: string; data: Uint8Array }> = []
-  const projected = coordinateSystem !== "EPSG:4167"
+  const outputCrs = resolveGisOutputCrs(coordinateSystem)
+  const linearScale = isGeographicCrs(outputCrs) ? null : crsUnitScale(outputCrs)
+  const projected = linearScale !== null
 
   if (layer.points.length > 0) {
     const fields: DbfField[] = [
@@ -510,7 +508,7 @@ export function createGeometryShapefileZip(
       FEATURE_ID: line.id,
       CODE: line.code,
       VERTICES: line.vertices.length,
-      LENGTH_M: lineLength(line),
+      LENGTH_M: lineLength(line) * (linearScale ?? 1),
     }))
     addShapeComponents(
       entries,
@@ -540,7 +538,7 @@ export function createGeometryShapefileZip(
       CODE: polygon.code,
       RINGS: polygon.rings.length,
       VERTICES: polygonVertexCount(polygon),
-      AREA_M2: polygonArea(polygon),
+      AREA_M2: polygonArea(polygon) * (linearScale ?? 1) ** 2,
     }))
     const shapePolygons = layer.polygons.map((polygon) => ({
       parts: shapefileRings(polygon),
@@ -693,14 +691,12 @@ function polygonWkb(polygon: SurveyPolygonFeature) {
   return bytes
 }
 
-function insertSpatialReferenceSystems(db: SqlDatabase) {
+function insertSpatialReferenceSystems(db: SqlDatabase, outputCrs: GisCrsDefinition) {
   const rows: Array<[string, number, string, number, string, string]> = [
     ["Undefined Cartesian", -1, "NONE", -1, "undefined", "undefined Cartesian coordinate reference system"],
     ["Undefined geographic", 0, "NONE", 0, "undefined", "undefined geographic coordinate reference system"],
-    ["WGS 84 geodetic", 4326, "EPSG", 4326, wgs84Wkt, "longitude and latitude on WGS 84"],
-    ["NZGD2000 / Mount Eden 2000", 2105, "EPSG", 2105, projectionWkt["EPSG:2105"], "Mount Eden 2000 circuit projection"],
-    ["NZGD2000 / NZTM2000", 2193, "EPSG", 2193, projectionWkt["EPSG:2193"], "New Zealand Transverse Mercator 2000"],
-    ["NZGD2000 geographic", 4167, "EPSG", 4167, projectionWkt["EPSG:4167"], "longitude and latitude on NZGD2000"],
+    ["WGS 84 geodetic", 4326, "EPSG", 4326, outputCrs.code === "EPSG:4326" ? outputCrs.wkt : wgs84Wkt, "longitude and latitude on WGS 84"],
+    ...(outputCrs.code === "EPSG:4326" ? [] : [[outputCrs.name, Number(outputCrs.code.slice(5)), "EPSG", Number(outputCrs.code.slice(5)), outputCrs.wkt, outputCrs.area] as [string, number, string, number, string, string]]),
   ]
   rows.forEach((row) =>
     db.run(
@@ -743,7 +739,7 @@ function insertContent(
 
 export async function createGeometryGeoPackage(
   layer: SurveyGeometryLayer,
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: GisOutputCrs,
 ) {
   const featureCount = layer.points.length + layer.lines.length + layer.polygons.length
   const vertexCount =
@@ -762,11 +758,13 @@ export async function createGeometryGeoPackage(
     )
   }
 
+  const outputCrs = resolveGisOutputCrs(coordinateSystem)
   const SQL = await loadSqlModule()
   const db = new SQL.Database()
-  const srsId = Number(coordinateSystem.split(":")[1])
+  const srsId = Number(outputCrs.code.slice(5))
   const timestamp = new Date().toISOString()
-  const projected = coordinateSystem !== "EPSG:4167"
+  const linearScale = isGeographicCrs(outputCrs) ? null : crsUnitScale(outputCrs)
+  const projected = linearScale !== null
 
   try {
     db.run("PRAGMA application_id=1196444487")
@@ -804,7 +802,7 @@ export async function createGeometryGeoPackage(
       CONSTRAINT fk_gc_tn FOREIGN KEY (table_name) REFERENCES gpkg_contents(table_name),
       CONSTRAINT fk_gc_srs FOREIGN KEY (srs_id) REFERENCES gpkg_spatial_ref_sys(srs_id)
     )`)
-    insertSpatialReferenceSystems(db)
+    insertSpatialReferenceSystems(db, outputCrs)
 
     if (layer.points.length > 0) {
       db.run(`CREATE TABLE survey_points (
@@ -875,7 +873,7 @@ export async function createGeometryGeoPackage(
           line.id,
           line.code,
           line.vertices.length,
-          projected ? lineLength(line) : null,
+          projected ? lineLength(line) * linearScale! : null,
         ])
         statement.step()
         statement.reset()
@@ -915,7 +913,7 @@ export async function createGeometryGeoPackage(
           polygon.code,
           polygon.rings.length,
           polygonVertexCount(polygon),
-          projected ? polygonArea(polygon) : null,
+          projected ? polygonArea(polygon) * linearScale! ** 2 : null,
         ])
         statement.step()
         statement.reset()

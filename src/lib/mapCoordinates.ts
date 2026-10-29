@@ -2,6 +2,7 @@ export type MapCrs = {
   code: string
   name: string
   proj4: string
+  canonicalProj4?: string
   area: string
   bbox: [number, number, number, number] | null
   unit: string
@@ -14,7 +15,7 @@ let cataloguePromise: Promise<MapCrs[]> | null = null
 
 export function loadCrsCatalogue(): Promise<MapCrs[]> {
   if (!cataloguePromise) {
-    cataloguePromise = fetch(`${import.meta.env.BASE_URL}data/coordinate-systems.json`)
+    cataloguePromise = fetch(`${import.meta.env.BASE_URL}data/coordinate-systems.json?v=2`)
       .then(async (response) => {
         if (!response.ok) throw new Error("The coordinate-system catalogue could not be loaded.")
         const records: MapCrs[] = await response.json()
@@ -107,7 +108,7 @@ export function crsUnitScale(crs: MapCrs): number | null {
 }
 
 export function isGeographicCrs(crs: MapCrs) {
-  return /\+proj=(longlat|latlong)\b/.test(crs.proj4)
+  return /\+proj=(longlat|latlong)\b/.test(crs.proj4) || /^\s*(GEOGCS|GEOGCRS)\s*\[/i.test(crs.proj4)
 }
 
 export type Basemap = "street" | "aerial" | "none"

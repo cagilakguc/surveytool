@@ -11,7 +11,7 @@ import type { FeedbackTone } from "../lib/feedback"
 const guides = [
   { title: "CSV / TXT to DXF", to: "/tools/csv-to-dxf", text: "Choose your file, map the point ID, easting and northing columns, then preview the rows. Height and code are optional. Choose your labels and download the DXF." },
   { title: "Opening a DXF in Civil 3D", to: "/tools/csv-to-dxf", text: "Use OPEN and choose the DXF file type. Run ZOOM, then Extents to see the points. The export contains ordinary CAD points and text labels; Civil 3D COGO points need a separate conversion." },
-  { title: "GIS Export", to: "/tools/gis-export", text: "Try Load demo, or choose a CSV, TXT or ASCII DXF file. Select the actual input coordinate system, then your output system and format. Heights keep their original vertical datum. Curves and unsupported Civil 3D objects are reported." },
+  { title: "GIS Export", to: "/tools/gis-export", text: "Choose a CSV, TXT or ASCII DXF file. Search global coordinate systems by EPSG code, grid name or country, then select the actual input CRS and desired output CRS. Inspect points, lines and polygons over street or aerial maps, then download a Shapefile ZIP or GeoPackage. X/Y are reprojected; Z values, height units and the vertical datum are retained. Use input CRS for output to preserve coordinates. Required but unavailable datum grids are reported." },
   { title: "LandXML and surfaces", to: "/tools/landxml-viewer", text: "Open your LandXML and choose the layers you want to inspect. If data is missing, check that the exported file includes the surface points and triangles. Use Surface Compare or Cross Section for further checks." },
 ]
 
