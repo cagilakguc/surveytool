@@ -1,3 +1,6 @@
+import ProjectPanel from "../components/ProjectPanel"
+import { assertDocument, assertPointLayer, record } from "../lib/projectWorkspace"
+import type { SectionSettings } from "../components/LandXmlCrossSection"
 import { useEffect, useRef, useState } from "react"
 import type { ChangeEvent, DragEvent } from "react"
 import {
@@ -109,6 +112,7 @@ export default function CrossSectionTool() {
   const [progress, setProgress] = useState({ stage: "", percent: 0 })
   const [error, setError] = useState("")
   const [showWorkspace, setShowWorkspace] = useState(false)
+  const [sectionSettings,setSectionSettings]=useState<SectionSettings|null>(null)
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -208,6 +212,7 @@ export default function CrossSectionTool() {
   }
 
   function loadDemo() {
+    setSectionSettings(null)
     abortRef.current?.abort()
     const parsed = parseLandXml(demoLandXml, "cross-section-demo.xml")
     documentRef.current = parsed
@@ -222,6 +227,7 @@ export default function CrossSectionTool() {
   }
 
   function reset() {
+    setSectionSettings(null)
     abortRef.current?.abort()
     documentRef.current = null
     pointLayersRef.current = []
@@ -266,6 +272,15 @@ export default function CrossSectionTool() {
           </div>
         </div>
 
+        <ProjectPanel tool="sections" disabled={isReading} state={{document,pointLayers,xmlFiles,pointFiles,sectionSettings}} onRestore={(state)=>{
+          if(state.document!==null)assertDocument(state.document)
+          if(!Array.isArray(state.pointLayers)||state.pointLayers.length>100)throw new Error("Invalid saved point layers.")
+          state.pointLayers.forEach(assertPointLayer)
+          const doc=state.document as LandXmlDocument|null,layers=state.pointLayers as SurveyPointLayer[]
+          const saved=state.sectionSettings===null?null:record(state.sectionSettings)
+          if(saved){for(const key of ["alignmentName","topSurfaceName","bottomSurfaceName","referenceSurfaceName"])if(typeof saved[key]!=="string")throw new Error("Invalid saved section selections.");if(!Number.isFinite(saved.corridor)||Number(saved.corridor)<=0)throw new Error("Invalid saved section corridor.");if(saved.line!==null){const section=record(saved.line);for(const key of ["start","end"]){const point=record(section[key]);if(!Number.isFinite(point.easting)||!Number.isFinite(point.northing))throw new Error("Invalid saved section endpoints.")}}}
+          documentRef.current=doc;pointLayersRef.current=layers;setDocument(doc);setPointLayers(layers);setXmlFiles(Array.isArray(state.xmlFiles)?state.xmlFiles.filter((x):x is string=>typeof x==="string"):[]);setPointFiles(Array.isArray(state.pointFiles)?state.pointFiles.filter((x):x is string=>typeof x==="string"):[]);setSectionSettings(saved as SectionSettings|null);setShowWorkspace(true);setError("")
+        }}/>
         {!hasFiles ? (
           <UploadPanel
             isDragging={isDragging}
@@ -318,7 +333,7 @@ export default function CrossSectionTool() {
                 <p className="mt-2 text-sm text-amber-200/80">Your as-built points have been kept. Add the XML containing the design or pavement surface; an alignment XML is optional but required for chainage.</p>
               </section>
             ) : showWorkspace ? (
-              <LandXmlCrossSection document={document} pointLayers={pointLayers} />
+              <LandXmlCrossSection document={document} pointLayers={pointLayers} settings={sectionSettings} onSettingsChange={setSectionSettings} />
             ) : (
               <section className="rounded-3xl border border-white/10 bg-white/5 p-7 text-center">
                 <Eye size={34} className="mx-auto text-cyan-300" />

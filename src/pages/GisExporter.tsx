@@ -1,3 +1,5 @@
+import ProjectPanel from "../components/ProjectPanel"
+import { assertGeometryLayer, record } from "../lib/projectWorkspace"
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { Link } from "react-router-dom"
@@ -282,6 +284,13 @@ export default function GisExporter() {
       />
 
       <div className="mx-auto max-w-7xl">
+        <ProjectPanel tool="gis" disabled={isReading||isExporting} state={{geometryLayer,preferences}} onRestore={(state)=>{
+          if(state.geometryLayer!==null)assertGeometryLayer(state.geometryLayer)
+          const prefs=record(state.preferences)
+          for(const key of ["source","target"])if(typeof prefs[key]!=="string"||!/^$|^EPSG:\d{4,6}$/.test(prefs[key] as string))throw new Error("Invalid saved CRS.")
+          setGeometryLayer(state.geometryLayer as SurveyGeometryLayer|null);setPreferences(readGisPreferences({getItem:()=>JSON.stringify(prefs)}));setError("");setPreparedDownload(null)
+        }}/>
+
         <Link
           to="/"
           className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-cyan-300"

@@ -11,10 +11,15 @@
     "predev": "node scripts/build-crs-catalogue.mjs",
     "prebuild": "node scripts/build-crs-catalogue.mjs",
     "test:maps": "node --import tsx scripts/validate-survey-maps.mjs",
-    "test:crs": "node --import tsx scripts/validate-crs-selection.mjs"
+    "test:crs": "node --import tsx scripts/validate-crs-selection.mjs",
+    "test:datum": "node --import tsx scripts/validate-datum-operations.mjs",
+    "test:asbuilt": "node --import tsx scripts/validate-asbuilt.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
+    "exceljs": "4.4.0",
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.9",
     "lucide-react": "^1.23.0",
     "ol": "^10.11.0",
     "ol-mapbox-style": "^13.8.0",
@@ -33,6 +38,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "epsg-index": "^2.0.0",
     "oxlint": "^1.71.0",
+    "sql.js": "1.14.1",
     "tailwindcss": "^4.3.2",
     "tsx": "^4.23.15",
     "typescript": "~6.0.2",

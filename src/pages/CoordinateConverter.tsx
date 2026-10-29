@@ -1,3 +1,5 @@
+import ProjectPanel from "../components/ProjectPanel"
+import { assertPointLayer } from "../lib/projectWorkspace"
 import {
   useEffect,
   useMemo,
@@ -270,6 +272,12 @@ export default function CoordinateConverter() {
           </div>
         </div>
 
+        <ProjectPanel tool="coordinates" disabled={isReading} state={{sourceCrs,targetCrs,pointLayer,firstCoordinate,secondCoordinate,outputFormat}} onRestore={(state)=>{
+          if(state.pointLayer!==null)assertPointLayer(state.pointLayer)
+          for(const key of ["sourceCrs","targetCrs"])if(typeof state[key]!=="string"||!/^$|^EPSG:\d{4,6}$/.test(state[key] as string))throw new Error("Invalid saved CRS.")
+          if(typeof state.firstCoordinate!=="string"||typeof state.secondCoordinate!=="string"||!["CSV","TXT","DXF","KML","GEOJSON"].includes(String(state.outputFormat)))throw new Error("Invalid saved conversion settings.")
+          setSourceCrs(state.sourceCrs as string);setTargetCrs(state.targetCrs as string);setPointLayer(state.pointLayer as SurveyPointLayer|null);setFirstCoordinate(state.firstCoordinate);setSecondCoordinate(state.secondCoordinate);setOutputFormat(state.outputFormat as SurveyOutputFormat);setSingleError("");setFileError("")
+        }}/>
         <section className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 md:p-8">
           <div className="flex items-start gap-4">
             <div className="rounded-2xl bg-cyan-400/10 p-3 text-cyan-300">

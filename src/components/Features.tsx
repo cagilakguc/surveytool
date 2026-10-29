@@ -20,6 +20,7 @@ type Feature = {
 }
 
 const features: Feature[] = [
+  { icon: ClipboardList, title: "As-built vs Design", description: "Check every measured point against a design TIN, apply tolerances and export PDF, Excel or CSV reports.", to: "/tools/as-built-check" },
   {
     icon: FileText,
     title: "CSV / TXT → DXF",

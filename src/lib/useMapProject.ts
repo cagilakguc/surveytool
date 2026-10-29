@@ -64,6 +64,9 @@ export function useMapProject(files: MapInputFile[]) {
     projectKey, files, settings, selections, catalogue, catalogueError, storageFailed,
     loading: !!projectKey && catalogue.length === 0 && !catalogueError,
     retryCatalogue: () => setRetry((value) => value + 1),
+    restoreSettings(key: string, value: MapProjectSettings) {
+      setUpdates((previous) => ({ ...previous, [key]: value }))
+    },
     setCrs(file: MapInputFile, code: string) {
       updateSettings((previous) => ({
         ...previous,
