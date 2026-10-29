@@ -1,3 +1,5 @@
+import { countryMatchesCrs } from "./crsSelection"
+
 export type MapCrs = {
   code: string
   name: string
@@ -7,6 +9,8 @@ export type MapCrs = {
   bbox: [number, number, number, number] | null
   unit: string
   note?: string
+  countries?: string[]
+  global?: boolean
 }
 
 export const localGridCode = "LOCAL"
@@ -15,7 +19,7 @@ let cataloguePromise: Promise<MapCrs[]> | null = null
 
 export function loadCrsCatalogue(): Promise<MapCrs[]> {
   if (!cataloguePromise) {
-    cataloguePromise = fetch(`${import.meta.env.BASE_URL}data/coordinate-systems.json?v=2`)
+    cataloguePromise = fetch(`${import.meta.env.BASE_URL}data/coordinate-systems.json?v=3`)
       .then(async (response) => {
         if (!response.ok) throw new Error("The coordinate-system catalogue could not be loaded.")
         const records: MapCrs[] = await response.json()
@@ -72,16 +76,13 @@ export function detectFileCrs(metadata: Record<string, string> | undefined, cata
 }
 
 export function searchCrsCatalogue(catalogue: MapCrs[], query: string, country: string) {
-  const tokens = normaliseCrsText(query.replace(/epsg\s*:/ig, "")).split(" ").filter(Boolean)
-  const countryAliases: Record<string, string> = { nz: "new zealand", uk: "united kingdom", usa: "united states", us: "united states", au: "australia", tr: "turkey" }
-  const region = countryAliases[normaliseCrsText(country)] ?? normaliseCrsText(country)
+  const tokens = normaliseCrsText(query.replace(/^\s*epsg\s*:?\s*/i, "")).split(" ").filter(Boolean)
   const aliasCode = aliases[normaliseCrsText(query)]
   return catalogue.filter((entry) => {
     const searchable = normaliseCrsText(`${entry.code} ${entry.name} ${entry.area}`)
-    const area = normaliseCrsText(`${entry.area} ${entry.name}`).replace(/turkiye/g, "turkey")
-    return (entry.code === aliasCode || tokens.every((token) => searchable.includes(token))) && (!region || area.includes(region.replace(/turkiye/g, "turkey")))
+    return (entry.code === aliasCode || tokens.every((token) => searchable.includes(token))) && countryMatchesCrs(entry, country)
   }).sort((a, b) => {
-    const exact = query.trim().replace(/^EPSG\s*:/i, "")
+    const exact = query.trim().replace(/^EPSG\s*:?\s*/i, "")
     if (a.code === `EPSG:${exact}`) return -1
     if (b.code === `EPSG:${exact}`) return 1
     return Number(a.code.slice(5)) - Number(b.code.slice(5))

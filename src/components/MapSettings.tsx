@@ -22,7 +22,7 @@ export default function MapSettings({ project }: { project: MapProject }) {
           </label>
         </div>
       </div>
-      <p className="mt-5 text-sm leading-6 text-slate-400">Select the coordinate system used in each file. Search by EPSG code, grid name or country. Local grids remain available in the plan view.</p>
+      <p className="mt-5 text-sm leading-6 text-slate-400">Choose a country, then the coordinate system used in each file. Search by grid name, zone or EPSG code at any time. Country filters never change a file's assigned CRS. Local grids remain available in the plan view.</p>
       {project.catalogueError ? (
         <p role="alert" className="mt-4 text-sm text-amber-200">{project.catalogueError} <button type="button" onClick={project.retryCatalogue} className="ml-2 underline">Retry</button></p>
       ) : (

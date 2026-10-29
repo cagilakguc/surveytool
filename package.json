@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "predev": "node scripts/build-crs-catalogue.mjs",
     "prebuild": "node scripts/build-crs-catalogue.mjs",
-    "test:maps": "node --import tsx scripts/validate-survey-maps.mjs"
+    "test:maps": "node --import tsx scripts/validate-survey-maps.mjs",
+    "test:crs": "node --import tsx scripts/validate-crs-selection.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

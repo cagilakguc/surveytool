@@ -17,7 +17,7 @@ export function angularDegreesPerUnit(crs: MapCrs) {
   throw new Error(`The angular units for ${crs.code} are not supported for reprojection.`)
 }
 
-export function transformGlobalSurveyGeometry(layer: SurveyGeometryLayer, source: MapCrs, target: MapCrs): SurveyGeometryLayer {
+export function createGlobalCoordinateTransform(source: MapCrs, target: MapCrs) {
   const sameCrs = source.code === target.code
   let converter: proj4.Converter | null = null
   const sourceFactor = angularDegreesPerUnit(source)
@@ -28,7 +28,7 @@ export function transformGlobalSurveyGeometry(layer: SurveyGeometryLayer, source
     throw new Error(`The ${source.code} → ${target.code} projection is not supported in this browser. Keep the source CRS or reproject the file in GIS software.`)
   }
 
-  function transform(vertex: SurveyVertex): SurveyVertex {
+  return function transform(vertex: SurveyVertex): SurveyVertex {
     if (![vertex.easting, vertex.northing, vertex.elevation].every(Number.isFinite)) throw new Error("The file contains a non-finite coordinate. Correct it before exporting.")
     const input: [number, number] = [vertex.easting * sourceFactor, vertex.northing * sourceFactor]
     if (isGeographicCrs(source) && (Math.abs(input[0]) > 180.000001 || Math.abs(input[1]) > 90.000001)) throw new Error("The input coordinates are outside the longitude/latitude range. Check the source CRS and X/Y column order.")
@@ -44,6 +44,11 @@ export function transformGlobalSurveyGeometry(layer: SurveyGeometryLayer, source
     if (isGeographicCrs(target) && (Math.abs(result[0]) > 180.000001 || Math.abs(result[1]) > 90.000001)) throw new Error("The converted coordinates are outside the valid geographic range. Check the selected systems.")
     return { easting: result[0] / targetFactor, northing: result[1] / targetFactor, elevation: vertex.elevation }
   }
+}
+
+export function transformGlobalSurveyGeometry(layer: SurveyGeometryLayer, source: MapCrs, target: MapCrs): SurveyGeometryLayer {
+  const transform = createGlobalCoordinateTransform(source, target)
+  const targetFactor = angularDegreesPerUnit(target)
 
   function path(vertices: SurveyVertex[]) {
     const converted = vertices.map(transform)

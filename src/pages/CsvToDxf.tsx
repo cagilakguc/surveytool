@@ -552,6 +552,7 @@ export default function CsvToDxf() {
             columns, choose the DXF settings and download
             the finished drawing.
           </p>
+          <p className="mt-3 max-w-2xl text-sm text-slate-400">Coordinates stay in their source grid. To change country grids or coordinate systems, use the <Link to="/tools/coordinate-converter" className="font-semibold text-cyan-300 underline underline-offset-4">Global Coordinate & File Converter</Link>.</p>
         </div>
 
         <label className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-white/20 bg-white/5 px-8 py-20 transition hover:border-cyan-400">

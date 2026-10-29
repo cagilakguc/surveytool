@@ -50,9 +50,9 @@ const features: Feature[] = [
   },
   {
     icon: MapPinned,
-    title: "NZ Coordinate & File Converter",
+    title: "Global Coordinate & File Converter",
     description:
-      "Convert Mount Eden and NZTM coordinates, then export CSV, TXT, DXF, KML or GeoJSON.",
+      "Choose a country, grid or EPSG code to convert coordinates and export CSV, TXT, DXF, KML or GeoJSON.",
     to: "/tools/coordinate-converter",
   },
   {
