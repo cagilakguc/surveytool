@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Generated EPSG catalogue
+public/data/coordinate-systems.json
+public/data/epsg-index-license.txt

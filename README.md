@@ -6,6 +6,7 @@ Browser-based tools for survey file conversion and civil engineering checks. Bui
 
 - CSV to DXF with column mapping, optional heights/codes, labels and R12-compatible layers.
 - LandXML viewer with surface, alignment and point previews.
+- Global street and aerial backgrounds in LandXML Viewer and Surface Compare, with searchable EPSG selection and map preferences saved per project on the current device.
 - Cross-sections, surface comparison and pavement conformance.
 - NZ coordinate conversion between Mount Eden 2000, NZTM2000 and NZGD2000 geographic coordinates.
 - GIS export to 3D Shapefile ZIP and GeoPackage, including separate point, line and polygon layers.
@@ -21,6 +22,20 @@ npm run lint
 ```
 
 Public Supabase configuration is described in `.env.example`. Billing secrets belong in the deployment environment.
+
+## Background maps and coordinate systems
+
+Import a LandXML file and use **Map & coordinates** to confirm its source CRS. Recognised EPSG attributes and exact grid names are read from LandXML by both parsers. Otherwise search by EPSG code, grid name and optional country/region. Each input file has its own setting. The EPSG catalogue is generated locally from `epsg-index` before development and production builds; its attribution is included in `public/data`.
+
+Street maps use OpenFreeMap; aerial imagery uses Esri World Imagery. Both show their provider attribution. **No background**, overlay opacity, pan/zoom, **Fit to surface** and the original plan preview are available. Files stay in the browser; background requests go directly to the selected map provider. Project map preferences are saved in local storage and are not account-synchronised.
+
+Surface comparison requires matching source grids and compatible linear units. Results use metres, square metres and cubic metres, including when both input surfaces use feet. Map reprojection is for display and does not change survey coordinates or the volume calculation. Vertical datums are retained and must be compatible. Local/unknown grids remain in plan view. CRSs that require unavailable datum grids show an explanation instead of silently skipping the datum transformation. British National Grid uses a labelled, approximate Helmert transformation for the background map. Web Mercator backgrounds are limited to approximately 85° latitude.
+
+```sh
+npm run test:maps
+```
+
+The map checks cover CRS metadata, country/name/code search, international projection checkpoints, source-grid and unit guards, metric result conversion, heatmap cell geometry, bounded TIN drawing, settings persistence, and the actual upload worker.
 
 ## GIS export
 

@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useMemo,
   useRef,
   useState,
@@ -20,11 +22,17 @@ import type { LandXmlDocument } from "../lib/landxml"
 import { parseLandXmlFile } from "../lib/landxmlAsync"
 import { compareSurfaces } from "../lib/surfaceCompare"
 import type { SurfaceComparison } from "../lib/surfaceCompare"
+import MapSettings from "../components/MapSettings"
+import { useMapProject } from "../lib/useMapProject"
+import { crsUnitScale, metresPerLinearUnit } from "../lib/mapCoordinates"
+import { comparisonCoordinateError, metricSurfaceComparison } from "../lib/surfaceMapAnalysis"
+
+const SurveyMap = lazy(() => import("../components/SurveyMap"))
 
 const maximumFileSize = 100 * 1024 * 1024
 
 function demoXml(name: string, offset: number) {
-  return `<?xml version="1.0"?><LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2"><Project name="Surface Compare Demo"/><Units><Metric linearUnit="meter"/></Units><Surfaces><Surface name="${name}"><Definition surfType="TIN"><Pnts><P id="1">5923000 1755000 ${12.1 + offset}</P><P id="2">5923000 1755100 ${12.8 + offset * 0.4}</P><P id="3">5923100 1755100 ${13.6 + offset}</P><P id="4">5923100 1755000 ${12.9 - offset * 0.3}</P><P id="5">5923050 1755050 ${13.15 + offset * 0.7}</P></Pnts><Faces><F>1 2 5</F><F>2 3 5</F><F>3 4 5</F><F>4 1 5</F></Faces></Definition></Surface></Surfaces></LandXML>`
+  return `<?xml version="1.0"?><LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2"><Project name="Surface Compare Demo"/><CoordinateSystem name="NZTM2000" epsgCode="2193"/><Units><Metric linearUnit="meter"/></Units><Surfaces><Surface name="${name}"><Definition surfType="TIN"><Pnts><P id="1">5912900 1761400 ${12.1 + offset}</P><P id="2">5912900 1761500 ${12.8 + offset * 0.4}</P><P id="3">5913000 1761500 ${13.6 + offset}</P><P id="4">5913000 1761400 ${12.9 - offset * 0.3}</P><P id="5">5912950 1761450 ${13.15 + offset * 0.7}</P></Pnts><Faces><F>1 2 5</F><F>2 3 5</F><F>3 4 5</F><F>4 1 5</F></Faces></Definition></Surface></Surfaces></LandXML>`
 }
 
 function format(value: number, digits = 2) {
@@ -205,6 +213,15 @@ export default function SurfaceCompare() {
   const [loadingTarget, setLoadingTarget] = useState<"existing" | "design" | null>(null)
   const [progress, setProgress] = useState({ stage: "", percent: 0 })
   const [error, setError] = useState("")
+  const mapFiles = useMemo(() => [
+    ...(existing ? [{ id: "existing", label: "Existing surface", document: existing }] : []),
+    ...(design ? [{ id: "design", label: "Design surface", document: design }] : []),
+  ], [existing, design])
+  const mapProject = useMapProject(mapFiles)
+  const existingSelection = mapProject.selections.find((file) => file.id === "existing")
+  const designSelection = mapProject.selections.find((file) => file.id === "design")
+  const coordinateError = existing && design ? comparisonCoordinateError(existing, design, existingSelection?.code ?? "", designSelection?.code ?? "", existingSelection?.crs ?? null, designSelection?.crs ?? null) : ""
+  const linearScale = metresPerLinearUnit(existing?.units ?? "") ?? (existingSelection?.crs ? crsUnitScale(existingSelection.crs) : null) ?? 1
 
   async function load(file: File, target: "existing" | "design") {
     if (file.size > maximumFileSize) {
@@ -261,12 +278,13 @@ export default function SurfaceCompare() {
     }
 
     try {
+      if (coordinateError) return { comparison: null, message: coordinateError }
       return {
-        comparison: compareSurfaces(
+        comparison: metricSurfaceComparison(compareSurfaces(
           existing.surfaces[existingIndex],
           design.surfaces[designIndex],
           resolution,
-        ),
+        ), linearScale),
         message: "",
       }
     } catch (caughtError) {
@@ -278,10 +296,10 @@ export default function SurfaceCompare() {
             : "The surfaces could not be compared.",
       }
     }
-  }, [analysisVersion, design, designIndex, existing, existingIndex, resolution])
+  }, [analysisVersion, design, designIndex, existing, existingIndex, resolution, coordinateError, linearScale])
 
   const comparison = comparisonResult.comparison
-  const visibleError = error || comparisonResult.message
+  const visibleError = error || coordinateError || comparisonResult.message
 
   function loadDemo() {
     abortRef.current?.abort()
@@ -356,6 +374,8 @@ export default function SurfaceCompare() {
           </button>
         </div>
 
+        {mapFiles.length > 0 && <div className="mt-6"><MapSettings project={mapProject} /></div>}
+
         {visibleError && (
           <div
             role="alert"
@@ -416,7 +436,8 @@ export default function SurfaceCompare() {
                 <button
                   type="button"
                   onClick={() => setAnalysisVersion((value) => value + 1)}
-                  className="mt-5 rounded-full bg-cyan-400 px-7 py-3 font-semibold text-slate-950 hover:bg-cyan-300"
+                  disabled={!!coordinateError || mapProject.loading || loadingTarget !== null}
+                  className="mt-5 rounded-full bg-cyan-400 px-7 py-3 font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-40"
                 >
                   Run surface comparison
                 </button>
@@ -447,14 +468,23 @@ export default function SurfaceCompare() {
                 </section>
 
                 <section className="grid gap-6 xl:grid-cols-[1fr_310px]">
-                  <DifferenceMap comparison={comparison} />
+                  {existingSelection?.crs ? (
+                    <Suspense fallback={<div role="status" className="rounded-3xl border border-white/10 p-8 text-sm text-slate-400">Loading survey map…</div>}>
+                      <SurveyMap crs={existingSelection.crs} basemap={mapProject.settings.basemap} opacity={mapProject.settings.opacity} comparison={comparison} fallback={<DifferenceMap comparison={comparison} />} />
+                    </Suspense>
+                  ) : (
+                    <div className="min-w-0 space-y-3">
+                      <p className="text-sm text-slate-400">Choose a recognised coordinate system above to add a background map.</p>
+                      <DifferenceMap comparison={comparison} />
+                    </div>
+                  )}
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
                     <Layers3 className="text-cyan-300" />
                     <h3 className="mt-4 text-lg font-semibold">Thickness check</h3>
                     <dl className="mt-5 space-y-3 text-sm">
                       <Stat label="Minimum" value={`${format(comparison.minDifference, 3)} m`} />
                       <Stat label="Maximum" value={`${format(comparison.maxDifference, 3)} m`} />
-                      <Stat label="Grid size" value={`${format(comparison.cellSize, 2)} m`} />
+                      <Stat label="Grid size" value={`${format(comparison.cellSize * linearScale, 2)} m`} />
                       <Stat label="Valid samples" value={comparison.sampleCount.toLocaleString("en-NZ")} />
                     </dl>
                     <button

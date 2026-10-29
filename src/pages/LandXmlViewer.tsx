@@ -1,5 +1,8 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -22,6 +25,8 @@ import {
 
 import LandXmlPreview from "../components/LandXmlPreview"
 import PageSeo from "../components/PageSeo"
+import MapSettings from "../components/MapSettings"
+import { useMapProject } from "../lib/useMapProject"
 import { parseLandXml } from "../lib/landxml"
 import type { LandXmlDocument } from "../lib/landxml"
 import {
@@ -30,27 +35,29 @@ import {
 } from "../lib/landxmlAsync"
 
 const maximumFileSize = 100 * 1024 * 1024
+const SurveyMap = lazy(() => import("../components/SurveyMap"))
 const automaticPreviewFaceLimit = 20_000
 const maximumInteractiveFaceLimit = 300_000
 
 const demoLandXml = `<?xml version="1.0" encoding="UTF-8"?>
 <LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2" date="2026-07-10">
   <Project name="SurveyTool Demo Project" />
+  <CoordinateSystem name="NZTM2000" epsgCode="2193" />
   <Application name="SurveyTool.io" manufacturer="SurveyTool" />
   <Units><Metric linearUnit="meter" /></Units>
   <CgPoints>
-    <CgPoint name="BM01">5923006 1755006 12.450</CgPoint>
-    <CgPoint name="BM02">5923088 1755092 13.180</CgPoint>
+    <CgPoint name="BM01">5912906 1761406 12.450</CgPoint>
+    <CgPoint name="BM02">5912988 1761492 13.180</CgPoint>
   </CgPoints>
   <Surfaces>
     <Surface name="Demo Existing Surface">
       <Definition surfType="TIN">
         <Pnts>
-          <P id="1">5923000 1755000 12.100</P>
-          <P id="2">5923000 1755100 12.800</P>
-          <P id="3">5923100 1755100 13.600</P>
-          <P id="4">5923100 1755000 12.900</P>
-          <P id="5">5923050 1755050 13.150</P>
+          <P id="1">5912900 1761400 12.100</P>
+          <P id="2">5912900 1761500 12.800</P>
+          <P id="3">5913000 1761500 13.600</P>
+          <P id="4">5913000 1761400 12.900</P>
+          <P id="5">5912950 1761450 13.150</P>
         </Pnts>
         <Faces><F>1 2 5</F><F>2 3 5</F><F>3 4 5</F><F>4 1 5</F></Faces>
       </Definition>
@@ -59,8 +66,8 @@ const demoLandXml = `<?xml version="1.0" encoding="UTF-8"?>
   <Alignments>
     <Alignment name="Demo Centreline" length="141.421" staStart="0.000">
       <CoordGeom>
-        <Line><Start>5923010 1755010</Start><End>5923050 1755050</End></Line>
-        <Line><Start>5923050 1755050</Start><End>5923090 1755090</End></Line>
+        <Line><Start>5912910 1761410</Start><End>5912950 1761450</End></Line>
+        <Line><Start>5912950 1761450</Start><End>5912990 1761490</End></Line>
       </CoordGeom>
     </Alignment>
   </Alignments>
@@ -83,6 +90,11 @@ export default function LandXmlViewer() {
   const [isReading, setIsReading] = useState(false)
   const [progress, setProgress] = useState({ stage: "", percent: 0 })
   const [showPreview, setShowPreview] = useState(false)
+  const [previewMode, setPreviewMode] = useState<"plan" | "map">("map")
+  const mapFiles = useMemo(() => document ? [{ id: "file", label: "LandXML file", document }] : [], [document])
+  const mapProject = useMapProject(mapFiles)
+  const selectedCrs = mapProject.selections[0]?.crs
+  const mapIsVisible = previewMode === "map" && !!selectedCrs
 
   useEffect(
     () => () => abortRef.current?.abort(),
@@ -326,8 +338,21 @@ export default function LandXmlViewer() {
               </section>
             )}
 
+            <MapSettings project={mapProject} />
+
             {showPreview ? (
-              <LandXmlPreview document={document} />
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2" aria-label="Preview mode">
+                  <button type="button" aria-pressed={!mapIsVisible} onClick={() => setPreviewMode("plan")} className={`rounded-full border px-5 py-2 text-sm font-semibold ${!mapIsVisible ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>Plan view</button>
+                  <button type="button" aria-pressed={mapIsVisible} disabled={!selectedCrs} onClick={() => setPreviewMode("map")} className={`rounded-full border px-5 py-2 text-sm font-semibold disabled:opacity-40 ${mapIsVisible ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>Map view</button>
+                  {!selectedCrs && <span className="text-xs text-slate-400">Select a coordinate system to enable the background map.</span>}
+                </div>
+                {mapIsVisible && selectedCrs ? (
+                  <Suspense fallback={<p role="status" className="p-6 text-sm text-slate-400">Loading survey map…</p>}>
+                    <SurveyMap document={document} crs={selectedCrs} basemap={mapProject.settings.basemap} opacity={mapProject.settings.opacity} />
+                  </Suspense>
+                ) : <LandXmlPreview document={document} />}
+              </div>
             ) : (
               <section className="rounded-3xl border border-white/10 bg-white/5 p-7 text-center">
                 <Eye size={34} className="mx-auto text-cyan-300" />

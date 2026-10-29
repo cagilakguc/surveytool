@@ -1,0 +1,8 @@
+.survey-map .ol-viewport { background: #07111f; }
+.survey-map .ol-control { background: rgb(2 6 23 / 85%); padding: 3px; border-radius: 12px; }
+.survey-map .ol-control button { background: #0f172a; color: #e2e8f0; border-radius: 8px; cursor: pointer; width: 32px; height: 32px; }
+.survey-map .ol-control button:hover, .survey-map .ol-control button:focus-visible { background: #164e63; outline: 2px solid #22d3ee; }
+.survey-map .ol-attribution { max-width: calc(100% - 12px); border-radius: 5px; background: rgb(255 255 255 / 92%); }
+.survey-map .ol-attribution ul { color: #0f172a; font-size: 10px; white-space: normal; }
+.survey-map .ol-attribution a { color: #0e7490; text-decoration: underline; }
+.survey-map .ol-scale-line { bottom: 28px; background: rgb(2 6 23 / 80%); border-radius: 6px; }
