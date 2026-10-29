@@ -2,6 +2,7 @@ import { createRequire } from "node:module"
 import { mkdir, writeFile, copyFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { countriesForArea, countriesForGlobalGrid } from "./crs-countries.mjs"
 
 const require = createRequire(import.meta.url)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -13,7 +14,7 @@ definitions["27700"].proj4 = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x
 definitions["27700"].note = "Background positioning uses an approximate datum transformation. Keep survey checks in the source grid."
 const catalogue = Object.values(definitions)
   .filter((entry) => entry.proj4 && ["CRS-PROJCRS", "CRS-GEOGCRS"].includes(entry.kind) && !/\+proj=(geocent|pipeline)\b/.test(entry.proj4))
-  .map((entry) => ({ code: `EPSG:${entry.code}`, name: entry.name, proj4: entry.proj4, area: entry.area ?? "", bbox: entry.bbox ?? null, unit: entry.unit ?? "", ...(entry.code === "27700" ? { canonicalProj4: canonicalBng } : {}), ...(entry.note ? { note: entry.note } : {}) }))
+  .map((entry) => ({ code: `EPSG:${entry.code}`, name: entry.name, proj4: entry.proj4, area: entry.area ?? "", bbox: entry.bbox ?? null, unit: entry.unit ?? "", countries: [...new Set([...countriesForArea(entry.area ?? ""), ...countriesForGlobalGrid(entry)])].sort(), global: /^World\b/i.test(entry.area ?? ""), ...(entry.code === "27700" ? { canonicalProj4: canonicalBng } : {}), ...(entry.note ? { note: entry.note } : {}) }))
 await mkdir(resolve(root, "public/data"), { recursive: true })
 await writeFile(resolve(root, "public/data/coordinate-systems.json"), JSON.stringify(catalogue))
 const buckets = new Map()

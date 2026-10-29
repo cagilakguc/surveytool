@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react"
@@ -17,14 +18,10 @@ import {
 } from "lucide-react"
 
 import PageSeo from "../components/PageSeo"
-import {
-  coordinateSystems,
-  getCoordinateSystem,
-  transformCoordinate,
-} from "../lib/nzCoordinates"
-import type {
-  CoordinateReferenceSystem,
-} from "../lib/nzCoordinates"
+import CrsPicker from "../components/CrsPicker"
+import { crsUnitScale, isGeographicCrs, loadCrsCatalogue } from "../lib/mapCoordinates"
+import type { MapCrs } from "../lib/mapCoordinates"
+import { createGlobalCoordinateTransform } from "../lib/globalGis"
 import {
   createSurveyOutput,
   transformSurveyPoints,
@@ -74,6 +71,7 @@ const outputFormats: Array<{
 ]
 
 function parseNumber(value: string) {
+  if (!value.trim()) return null
   const parsed = Number(value.trim())
   return Number.isFinite(parsed) ? parsed : null
 }
@@ -95,97 +93,70 @@ function downloadContent(
 }
 
 export default function CoordinateConverter() {
-  const [sourceCrs, setSourceCrs] =
-    useState<CoordinateReferenceSystem>("EPSG:2105")
-  const [targetCrs, setTargetCrs] =
-    useState<CoordinateReferenceSystem>("EPSG:2193")
-  const [firstCoordinate, setFirstCoordinate] = useState("399922.7115")
-  const [secondCoordinate, setSecondCoordinate] = useState("803464.5423")
+  const [sourceCrs, setSourceCrs] = useState("")
+  const [targetCrs, setTargetCrs] = useState("EPSG:4326")
+  const [firstCoordinate, setFirstCoordinate] = useState("")
+  const [secondCoordinate, setSecondCoordinate] = useState("")
   const [singleError, setSingleError] = useState("")
-  const [pointLayer, setPointLayer] =
-    useState<SurveyPointLayer | null>(null)
+  const [pointLayer, setPointLayer] = useState<SurveyPointLayer | null>(null)
   const [fileError, setFileError] = useState("")
   const [isReading, setIsReading] = useState(false)
-  const [outputFormat, setOutputFormat] =
-    useState<SurveyOutputFormat>("CSV")
+  const [outputFormat, setOutputFormat] = useState<SurveyOutputFormat>("CSV")
+  const [catalogue, setCatalogue] = useState<MapCrs[]>([])
+  const [catalogueError, setCatalogueError] = useState("")
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let active = true
+    setCatalogueError("")
+    loadCrsCatalogue().then((entries) => { if (active) setCatalogue(entries) })
+      .catch((error) => { if (active) setCatalogueError(error instanceof Error ? error.message : "Coordinate systems could not be loaded.") })
+    return () => { active = false }
+  }, [attempt])
+  const catalogueLoading = !catalogue.length && !catalogueError
+  const sourceDefinition = catalogue.find((entry) => entry.code === sourceCrs)
+  const targetDefinition = catalogue.find((entry) => entry.code === targetCrs)
+  const labels = (crs?: MapCrs) => crs && isGeographicCrs(crs)
+    ? ["Longitude (X)", "Latitude (Y)"] : ["Easting (X)", "Northing (Y)"]
+  const sourceSystem = { shortName: sourceDefinition?.code ?? "Unassigned", coordinateLabels: labels(sourceDefinition) }
+  const targetSystem = { shortName: targetDefinition?.code ?? "Unassigned", coordinateLabels: labels(targetDefinition) }
+  const singleDigits = targetDefinition && isGeographicCrs(targetDefinition) ? 9 : 4
 
-  const sourceSystem = getCoordinateSystem(sourceCrs)
-  const targetSystem = getCoordinateSystem(targetCrs)
-
-  const singleResult = useMemo(() => {
+  const singleConversion = useMemo(() => {
     const first = parseNumber(firstCoordinate)
     const second = parseNumber(secondCoordinate)
-
-    if (first === null || second === null) {
-      return null
-    }
-
+    if (!sourceDefinition || !targetDefinition || first === null || second === null) return { point: null, error: "" }
     try {
-      return transformCoordinate(
-        { x: first, y: second },
-        sourceCrs,
-        targetCrs,
-      )
-    } catch {
-      return null
+      const result = createGlobalCoordinateTransform(sourceDefinition, targetDefinition)({ easting: first, northing: second, elevation: 0 })
+      return { point: { x: result.easting, y: result.northing }, error: "" }
+    } catch (error) {
+      return { point: null, error: error instanceof Error ? error.message : "The coordinate could not be converted." }
     }
-  }, [firstCoordinate, secondCoordinate, sourceCrs, targetCrs])
+  }, [firstCoordinate, secondCoordinate, sourceDefinition, targetDefinition])
+  const singleResult = singleConversion.point
+  const displayedSingleError = singleError || singleConversion.error
 
-  const convertedPoints = useMemo(() => {
-    if (!pointLayer) {
-      return []
-    }
-
-    try {
-      return transformSurveyPoints(
-        pointLayer.points,
-        sourceCrs,
-        targetCrs,
-      )
-    } catch {
-      return []
-    }
-  }, [pointLayer, sourceCrs, targetCrs])
+  const batchConversion = useMemo(() => {
+    if (!pointLayer) return { points: [], error: "" }
+    if (!sourceDefinition || !targetDefinition) return { points: [], error: "Choose the actual input CRS and an output CRS to convert this file." }
+    try { return { points: transformSurveyPoints(pointLayer.points, sourceDefinition, targetDefinition), error: "" } }
+    catch (error) { return { points: [], error: error instanceof Error ? error.message : "The points could not be converted." } }
+  }, [pointLayer, sourceDefinition, targetDefinition])
+  const convertedPoints = batchConversion.points
 
   function swapCoordinateSystems() {
     setSourceCrs(targetCrs)
     setTargetCrs(sourceCrs)
-
     if (singleResult) {
-      setFirstCoordinate(singleResult.x.toFixed(
-        targetCrs === "EPSG:4167" ? 9 : 4,
-      ))
-      setSecondCoordinate(singleResult.y.toFixed(
-        targetCrs === "EPSG:4167" ? 9 : 4,
-      ))
+      setFirstCoordinate(singleResult.x.toFixed(singleDigits))
+      setSecondCoordinate(singleResult.y.toFixed(singleDigits))
     }
-
     setSingleError("")
+    setFileError("")
   }
-
   function validateSinglePoint() {
-    const first = parseNumber(firstCoordinate)
-    const second = parseNumber(secondCoordinate)
-
-    if (first === null || second === null) {
-      setSingleError("Enter two valid coordinate values.")
-      return
-    }
-
-    try {
-      transformCoordinate(
-        { x: first, y: second },
-        sourceCrs,
-        targetCrs,
-      )
-      setSingleError("")
-    } catch (caughtError) {
-      setSingleError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "The coordinate could not be converted.",
-      )
-    }
+    if (!sourceDefinition || !targetDefinition) setSingleError("Choose both coordinate systems first.")
+    else if (parseNumber(firstCoordinate) === null || parseNumber(secondCoordinate) === null) setSingleError("Enter two valid coordinate values.")
+    else setSingleError(singleConversion.error)
   }
 
   async function handleFileChange(
@@ -223,14 +194,14 @@ export default function CoordinateConverter() {
   }
 
   function downloadConvertedFile() {
-    if (!pointLayer || convertedPoints.length === 0) {
+    if (!pointLayer || !targetDefinition || convertedPoints.length === 0) {
       return
     }
 
     try {
       const output = createSurveyOutput(
         convertedPoints,
-        targetCrs,
+        targetDefinition,
         outputFormat,
       )
       const baseName =
@@ -259,14 +230,13 @@ export default function CoordinateConverter() {
     }
   }
 
-  const singleDigits = targetCrs === "EPSG:4167" ? 9 : 4
   const preview = convertedPoints.slice(0, 12)
 
   return (
     <div className="relative z-10 min-h-screen px-6 py-20 md:py-24">
       <PageSeo
-        title="Mount Eden to NZTM Coordinate & File Converter | SurveyTool.io"
-        description="Convert coordinates and survey point files between Mount Eden 2000 and NZTM2000. Export CSV, TXT, DXF, KML or GeoJSON in your browser."
+        title="Global Coordinate & File Converter | SurveyTool.io"
+        description="Choose a country, grid or EPSG code to convert coordinates and survey point files worldwide. Export CSV, TXT, DXF, KML or GeoJSON in your browser."
         canonicalUrl="https://www.surveytool.io/tools/coordinate-converter"
       />
 
@@ -285,12 +255,12 @@ export default function CoordinateConverter() {
               SurveyTool
             </p>
             <h1 className="mt-4 max-w-4xl text-4xl font-bold tracking-tight sm:text-5xl">
-              NZ Coordinate & File Converter
+              Global Coordinate & File Converter
             </h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-400">
-              Convert Mount Eden 2000, NZTM2000 and NZGD2000 geographic
-              coordinates. Batch-convert CSV, TXT and ASCII DXF survey points
-              and export them to CAD, spreadsheet, Google Earth or GIS formats.
+              Choose a country and coordinate system, or search directly by EPSG
+              code. Convert individual coordinates or CSV, TXT and ASCII DXF
+              survey points, then export to CAD, spreadsheet or mapping formats.
             </p>
           </div>
 
@@ -310,17 +280,15 @@ export default function CoordinateConverter() {
                 Single coordinate
               </p>
               <h2 className="mt-2 text-2xl font-semibold">
-                Mount Eden ↔ NZTM
+                Convert between coordinate systems
               </h2>
             </div>
           </div>
 
-          <div className="mt-7 grid gap-5 lg:grid-cols-[1fr_auto_1fr] lg:items-end">
-            <CoordinateSystemSelect
-              label="Input coordinate system"
-              value={sourceCrs}
-              onChange={setSourceCrs}
-            />
+          <button type="button" onClick={() => { setSourceCrs("EPSG:2105"); setTargetCrs("EPSG:2193"); setFirstCoordinate("399922.7115"); setSecondCoordinate("803464.5423"); setSingleError(""); setFileError("") }} className="mt-5 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-cyan-200 hover:bg-white/10">Load NZ example</button>
+          {catalogueError && <p role="alert" className="mt-4 text-sm text-amber-200">{catalogueError} <button type="button" onClick={() => setAttempt((value) => value + 1)} className="underline">Retry</button></p>}
+          <div className="mt-7 grid gap-5 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
+            <CrsPicker label="Input" value={sourceCrs} onChange={(code) => { setSourceCrs(code); setSingleError(""); setFileError("") }} catalogue={catalogue} loading={catalogueLoading} allowLocal={false} showMapNote={false} note="Choose the actual source CRS. X = Easting/Longitude; Y = Northing/Latitude." />
 
             <button
               type="button"
@@ -331,23 +299,19 @@ export default function CoordinateConverter() {
               <ArrowRightLeft size={20} />
             </button>
 
-            <CoordinateSystemSelect
-              label="Output coordinate system"
-              value={targetCrs}
-              onChange={setTargetCrs}
-            />
+            <CrsPicker label="Output" value={targetCrs} onChange={(code) => { setTargetCrs(code); setSingleError(""); setFileError("") }} catalogue={catalogue} loading={catalogueLoading} allowLocal={false} showMapNote={false} note="Applies to the single-coordinate result and CSV, TXT and DXF file conversion below." />
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <CoordinateInput
-              label={sourceSystem.coordinateLabels[0]}
+              label={`${sourceSystem.coordinateLabels[0]}${sourceDefinition ? ` · ${sourceDefinition.unit}` : ""}`}
               value={firstCoordinate}
-              onChange={setFirstCoordinate}
+              onChange={(value) => { setFirstCoordinate(value); setSingleError("") }}
             />
             <CoordinateInput
-              label={sourceSystem.coordinateLabels[1]}
+              label={`${sourceSystem.coordinateLabels[1]}${sourceDefinition ? ` · ${sourceDefinition.unit}` : ""}`}
               value={secondCoordinate}
-              onChange={setSecondCoordinate}
+              onChange={(value) => { setSecondCoordinate(value); setSingleError("") }}
             />
           </div>
 
@@ -359,11 +323,11 @@ export default function CoordinateConverter() {
             Convert coordinate
           </button>
 
-          {singleError && (
-            <p className="mt-4 text-sm text-rose-300">{singleError}</p>
+          {displayedSingleError && (
+            <p className="mt-4 text-sm text-rose-300">{displayedSingleError}</p>
           )}
 
-          {singleResult && !singleError && (
+          {singleResult && !displayedSingleError && (
             <div className="mt-6 grid gap-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5 sm:grid-cols-2">
               <ResultValue
                 label={targetSystem.coordinateLabels[0]}
@@ -411,12 +375,12 @@ export default function CoordinateConverter() {
             </label>
           </div>
 
-          {fileError && (
+          {(fileError || batchConversion.error) && (
             <div
               role="alert"
               className="mt-6 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-5 text-rose-200"
             >
-              {fileError}
+              {fileError || batchConversion.error}
             </div>
           )}
 
@@ -469,10 +433,10 @@ export default function CoordinateConverter() {
                               {point.id}
                             </td>
                             <td className="px-4 py-3 text-slate-300">
-                              {point.easting.toFixed(targetCrs === "EPSG:4167" ? 9 : 4)}
+                              {point.easting.toFixed(singleDigits)}
                             </td>
                             <td className="px-4 py-3 text-slate-300">
-                              {point.northing.toFixed(targetCrs === "EPSG:4167" ? 9 : 4)}
+                              {point.northing.toFixed(singleDigits)}
                             </td>
                             <td className="px-4 py-3 text-slate-300">
                               {point.elevation.toFixed(4)}
@@ -522,15 +486,16 @@ export default function CoordinateConverter() {
                   {(outputFormat === "KML" ||
                     outputFormat === "GEOJSON") && (
                     <p className="mt-4 text-xs leading-5 text-amber-200/80">
-                      Mapping exports are written as longitude and latitude.
+                      KML and GeoJSON are written as WGS 84 longitude and latitude.
                       Elevation is retained as the third coordinate.
                     </p>
                   )}
 
+                  {outputFormat === "DXF" && targetDefinition && (isGeographicCrs(targetDefinition) || crsUnitScale(targetDefinition) !== 1) && <p className="mt-4 text-xs text-amber-200">Choose a projected output CRS in metres for DXF export.</p>}
                   <button
                     type="button"
                     onClick={downloadConvertedFile}
-                    disabled={convertedPoints.length === 0}
+                    disabled={convertedPoints.length === 0 || (outputFormat === "DXF" && (!targetDefinition || isGeographicCrs(targetDefinition) || crsUnitScale(targetDefinition) !== 1))}
                     className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Download size={18} />
@@ -544,44 +509,13 @@ export default function CoordinateConverter() {
 
         <section className="mt-8 rounded-3xl border border-amber-300/20 bg-amber-300/5 p-6 text-sm leading-6 text-amber-100/80">
           <strong className="text-amber-200">Survey note:</strong>{" "}
-          Mount Eden 2000 and NZTM2000 are both NZGD2000 projections, so
-          elevations are carried through unchanged. KML and GeoJSON are mapping
-          exports; use official geodetic software and current deformation models
-          where centimetre-level WGS84 epoch transformation is required.
+          Horizontal conversion retains elevation values, height units and the
+          original vertical datum. KML and GeoJSON use WGS 84 longitude/latitude.
+          Conversions requiring unavailable datum grids are reported. Use current
+          geodetic models where a survey requires an epoch-aware transformation.
         </section>
       </div>
     </div>
-  )
-}
-
-type CoordinateSystemSelectProps = {
-  label: string
-  value: CoordinateReferenceSystem
-  onChange: (value: CoordinateReferenceSystem) => void
-}
-
-function CoordinateSystemSelect({
-  label,
-  value,
-  onChange,
-}: CoordinateSystemSelectProps) {
-  return (
-    <label className="block text-sm text-slate-300">
-      <span className="mb-2 block">{label}</span>
-      <select
-        value={value}
-        onChange={(event) =>
-          onChange(event.target.value as CoordinateReferenceSystem)
-        }
-        className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-400"
-      >
-        {coordinateSystems.map((system) => (
-          <option key={system.id} value={system.id}>
-            {system.name} ({system.id})
-          </option>
-        ))}
-      </select>
-    </label>
   )
 }
 

@@ -5,6 +5,13 @@ import {
 import type {
   CoordinateReferenceSystem,
 } from "./nzCoordinates"
+import type { MapCrs } from "./mapCoordinates"
+import { crsUnitScale, isGeographicCrs } from "./mapCoordinates"
+import { createGlobalCoordinateTransform } from "./globalGis"
+
+export type PointCoordinateSystem = CoordinateReferenceSystem | MapCrs
+const wgs84: MapCrs = { code: "EPSG:4326", name: "WGS 84", proj4: "+proj=longlat +datum=WGS84 +no_defs", area: "World.", bbox: [90, -180, -90, 180], unit: "degree" }
+const geographicSystem = (crs: PointCoordinateSystem) => typeof crs === "string" ? crs === "EPSG:4167" : isGeographicCrs(crs)
 
 export type SurveyOutputFormat =
   | "CSV"
@@ -20,9 +27,14 @@ export type ConvertedSurveyPoint = SurveyPoint & {
 
 export function transformSurveyPoints(
   points: SurveyPoint[],
-  source: CoordinateReferenceSystem,
-  target: CoordinateReferenceSystem,
+  source: PointCoordinateSystem,
+  target: PointCoordinateSystem,
 ): ConvertedSurveyPoint[] {
+  if (typeof source !== "string" && typeof target !== "string") {
+    const convert = createGlobalCoordinateTransform(source, target)
+    return points.map((point) => ({ ...point, ...convert(point), sourceEasting: point.easting, sourceNorthing: point.northing }))
+  }
+  if (typeof source !== "string" || typeof target !== "string") throw new Error("Load both coordinate-system definitions before converting points.")
   return points.map((point) => {
     const transformed = transformCoordinate(
       { x: point.easting, y: point.northing },
@@ -62,9 +74,9 @@ function dxfText(value: string) {
 
 export function createCsv(
   points: SurveyPoint[],
-  target: CoordinateReferenceSystem,
+  target: PointCoordinateSystem,
 ) {
-  const geographic = target === "EPSG:4167"
+  const geographic = geographicSystem(target)
   const rows = [
     [
       "Point ID",
@@ -87,9 +99,9 @@ export function createCsv(
 
 export function createTxt(
   points: SurveyPoint[],
-  target: CoordinateReferenceSystem,
+  target: PointCoordinateSystem,
 ) {
-  const geographic = target === "EPSG:4167"
+  const geographic = geographicSystem(target)
   const rows = [
     [
       "Point ID",
@@ -160,8 +172,9 @@ export function createDxf(points: SurveyPoint[]) {
 
 function geographicPoints(
   points: SurveyPoint[],
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: PointCoordinateSystem,
 ) {
+  if (typeof coordinateSystem !== "string") return transformSurveyPoints(points, coordinateSystem, wgs84)
   return coordinateSystem === "EPSG:4167"
     ? points
     : transformSurveyPoints(points, coordinateSystem, "EPSG:4167")
@@ -169,7 +182,7 @@ function geographicPoints(
 
 export function createKml(
   points: SurveyPoint[],
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: PointCoordinateSystem,
 ) {
   const geographic = geographicPoints(points, coordinateSystem)
   const placemarks = geographic.map((point) => `
@@ -194,7 +207,7 @@ export function createKml(
 
 export function createGeoJson(
   points: SurveyPoint[],
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: PointCoordinateSystem,
 ) {
   const geographic = geographicPoints(points, coordinateSystem)
 
@@ -226,7 +239,7 @@ export function createGeoJson(
 
 export function createSurveyOutput(
   points: SurveyPoint[],
-  coordinateSystem: CoordinateReferenceSystem,
+  coordinateSystem: PointCoordinateSystem,
   format: SurveyOutputFormat,
 ) {
   switch (format) {
@@ -243,7 +256,7 @@ export function createSurveyOutput(
         mimeType: "text/plain;charset=utf-8",
       }
     case "DXF":
-      if (coordinateSystem === "EPSG:4167") {
+      if (geographicSystem(coordinateSystem) || (typeof coordinateSystem !== "string" && crsUnitScale(coordinateSystem) !== 1)) {
         throw new Error("DXF export requires a projected coordinate system in metres.")
       }
       return {
