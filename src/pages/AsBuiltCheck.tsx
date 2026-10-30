@@ -657,7 +657,7 @@ export default function AsBuiltCheck() {
           onClick={() => designFile.current?.click()}
           className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950"
         >
-          {reading ? `Reading… ${progress}%` : "1. Load design LandXML"}
+          {reading ? `Reading… ${progress}%` : "1. Upload design surface (.xml)"}
         </button>
         <button
           type="button"
@@ -731,13 +731,20 @@ export default function AsBuiltCheck() {
         className="mt-7 space-y-6 disabled:opacity-70"
       >
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
-          <h2 className="text-lg font-semibold">
-            Design surface and coordinates
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">Design surface and coordinates</h2>
+            <button
+              type="button"
+              onClick={() => designFile.current?.click()}
+              className="rounded-full bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950"
+            >
+              {document ? "Replace design surface" : "Upload design surface"}
+            </button>
+          </div>
           <p className="mt-1 text-xs text-slate-400">
             {document
               ? `${document.fileName} · ${document.surfaces.length} surfaces · ${surface?.faces.length.toLocaleString() ?? 0} faces`
-              : "Load the design TIN to begin."}
+              : "Upload a LandXML (.xml or .landxml) file containing your design TIN. Its surfaces will appear in the list below."}
           </p>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="space-y-4">
@@ -745,12 +752,14 @@ export default function AsBuiltCheck() {
                 Design surface
                 <select
                   aria-label="Design surface"
+                  disabled={!document?.surfaces.length}
                   value={surfaceIndex}
                   onChange={(event) =>
                     setSurfaceIndex(Number(event.target.value))
                   }
                   className={`${field} mt-1`}
                 >
+                  {!document && <option value={0}>Upload the design XML first</option>}
                   {document?.surfaces.map((item, index) => (
                     <option key={index} value={index}>
                       {item.name}
@@ -1023,6 +1032,7 @@ export default function AsBuiltCheck() {
                 <SurveyMap
                   crs={crs}
                   geometry={geometry}
+                  geometryContext="survey"
                   basemap={basemap}
                   opacity={90}
                   heightUnitLabel="m (measured)"

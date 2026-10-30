@@ -102,6 +102,10 @@ The check runs in a cancellable worker with limits of 250,000 measured points an
 
 The same PDF/Excel/CSV report controls are available for Surface Compare, Cross Sections and Pavement Conformance. Existing pavement matching/thickness calculations and the original CSV export remain in place for user field testing. Cross-section distances, chainage and RL stay in source units; thickness/differences are converted to mm for recognised linear units.
 
+## Pavement Conformance maps
+
+Pavement Conformance's thickness pass/fail map supports the shared country-first CRS picker, street and Esri aerial/satellite backgrounds, point opacity and source-grid plan. Both CSV/TXT files must already use the same projected metre grid and height datum. The selected CRS positions the map only; matching, thicknesses and tolerances retain the original coordinates. Mount Eden 2000 is EPSG:2105; do not substitute another Mount Eden datum/version. Unknown/local, unsupported-unit and failed map transformations retain the plain plan and full results. Interactive previews sample up to 5,000 matched points; statistics and reports use all matches. Map preferences are saved per filename pair and included in portable workspaces; old workspaces without map preferences still open. Report metadata records the user-selected CRS.
+
 ## Saved workspaces
 
 Use **Save / reopen project** in As-built vs Design, LandXML Viewer, Surface Compare, Cross Sections, Pavement Conformance, Coordinate Converter and GIS Export. IndexedDB stores parsed files and settings on the current browser/device; `/projects` lists them. This is separate from account-backed Supabase uploads. Download `.surveytool.json` for a portable backup; reopening validates the version/tool and input shapes, restores files/settings, and recalculates results. Cross-section bundles retain drawn endpoints and surface/alignment selections. Clearing browser site data removes device saves. Blocked/quota-limited storage shows an error and portable export remains available.

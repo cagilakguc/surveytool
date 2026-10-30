@@ -6,6 +6,8 @@ import { declaredEpsgCode, detectFileCrs, searchCrsCatalogue, metresPerLinearUni
 import { buildSurveyMapData, createMapTransform, validateMapLocation, maximumMapFaces } from "../src/lib/surveyMapGeometry.ts"
 import { comparisonCoordinateError, metricSurfaceComparison, mapInputUnitError } from "../src/lib/surfaceMapAnalysis.ts"
 import { compareSurfaces } from "../src/lib/surfaceCompare.ts"
+import { buildPavementMapGeometry, pavementMapCoordinateError, pavementMapKey } from "../src/lib/pavementMap.ts"
+import { buildGisMapData } from "../src/lib/gisMapGeometry.ts"
 
 const catalogue = JSON.parse(await readFile(new URL("../public/data/coordinate-systems.json", import.meta.url), "utf8"))
 const crs = (code) => { const value = catalogue.find((entry) => entry.code === `EPSG:${code}`); assert.ok(value, `Missing EPSG:${code}`); return value }
@@ -83,6 +85,33 @@ assert.deepEqual(comparison, originalComparison)
 const viewerData = buildSurveyMapData(crs(2193), document)
 assert.equal(viewerData.features.length, 2)
 assert.equal(viewerData.groups[0].label, "Existing")
+
+// The Mount Eden circuit origin is published by LINZ. Map preparation must
+// preserve the survey coordinates, levels, thickness and pass/fail classification.
+const pavement = [
+  { id: "CONTROL", easting: 400000, northing: 800000, topElevation: 6.183, thicknessMm: 111, deviationMm: 36, status: "fail" },
+  { id: "PASS", easting: 400010, northing: 800005, topElevation: 6.262, thicknessMm: 81, deviationMm: 6, status: "pass" },
+]
+const originalPavement = structuredClone(pavement)
+const pavementGeometry = buildPavementMapGeometry(pavement)
+const pavementMap = buildGisMapData(crs(2105), pavementGeometry)
+const control = pavementMap.features[0]
+const controlLocation = proj4("EPSG:3857", "EPSG:4326", control.getGeometry().getCoordinates())
+close(controlLocation[0], 174.764166666667)
+close(controlLocation[1], -36.8797222222222)
+assert.equal(control.get("easting"), 400000)
+assert.equal(control.get("northing"), 800000)
+assert.equal(control.get("elevation"), 6.183)
+assert.equal(control.get("colour"), "#fb7185")
+assert.equal(pavementMap.features[1].get("colour"), "#34d399")
+assert.match(control.get("name"), /111.0 mm.*\+36.0 mm/)
+assert.deepEqual(pavement, originalPavement)
+assert.equal(pavementMapCoordinateError(crs(2105)), "")
+assert.match(pavementMapCoordinateError(crs(4326)), /projected grid in metres/)
+assert.match(pavementMapCoordinateError(crs(2263)), /projected grid in metres/)
+assert.ok(buildPavementMapGeometry(Array.from({ length: 250000 }, (_, i) => ({ ...pavement[0], id: String(i) }))).points.length <= 5000)
+assert.notEqual(pavementMapKey("a.csv", "b.csv"), pavementMapKey("b.csv", "a.csv"))
+assert.notEqual(pavementMapKey("a.csv", "b.csv"), pavementMapKey("a.csv", "c.csv"))
 const large = structuredClone(document)
 large.surfaces[0].faces = Array.from({ length: maximumMapFaces * 3 }, () => ["a", "b", "c"])
 const sampled = buildSurveyMapData(crs(2193), large)
