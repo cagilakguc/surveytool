@@ -20,7 +20,7 @@ import type { SurveyGeometryLayer } from "../lib/surveyGeometry"
 import "ol/ol.css"
 import "./SurveyMap.css"
 
-type SurveyMapProps = { crs: MapCrs; basemap: Basemap; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; heightUnitLabel?: string; fallback?: ReactNode }
+type SurveyMapProps = { crs: MapCrs; basemap: Basemap; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode }
 type Hover = { name: string; easting?: number; northing?: number; elevation?: number; difference?: number; coordinateLabel?: string }
 
 function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>) {
@@ -42,7 +42,7 @@ function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>
   return style
 }
 
-export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, heightUnitLabel, fallback }: SurveyMapProps) {
+export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback }: SurveyMapProps) {
   const target = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const vectorRef = useRef<VectorLayer | null>(null)
@@ -140,13 +140,13 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     }
   }, [basemap, canRender])
 
-  if (data.error || initialisationError) return <div className="min-w-0 space-y-3"><div role="alert" className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 text-sm leading-6 text-amber-100">{data.error || initialisationError} {geometry ? "Your source geometry and GIS export remain available." : "Your source coordinates and calculation results are retained."}</div>{fallback}</div>
+  if (data.error || initialisationError) return <div className="min-w-0 space-y-3"><div role="alert" className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 text-sm leading-6 text-amber-100">{data.error || initialisationError} {geometry && geometryContext === "export" ? "Your source geometry and GIS export remain available." : "Your source coordinates and calculation results are retained."}</div>{fallback}</div>
 
   return (
     <div className="survey-map overflow-hidden rounded-3xl border border-white/10 bg-slate-950">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <p className="min-w-0 text-xs text-slate-300"><strong className="text-white">{comparison ? "Surface difference" : "Survey map"}</strong> · {crs.code} · {basemap === "aerial" ? "Aerial / satellite" : basemap === "street" ? "Street map" : "No background"}</p>
-        <button type="button" onClick={() => data.value && mapRef.current?.getView().fit(data.value.extent, { padding: [45, 45, 45, 45], maxZoom: 20, duration: 200 })} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"><Maximize2 size={14} />Fit to surface</button>
+        <button type="button" onClick={() => data.value && mapRef.current?.getView().fit(data.value.extent, { padding: [45, 45, 45, 45], maxZoom: 20, duration: 200 })} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"><Maximize2 size={14} />{geometry ? "Fit to points" : "Fit to surface"}</button>
       </div>
       <div className="relative">
         <div ref={target} className="h-[440px] w-full outline-none sm:h-[540px]" tabIndex={0} role="region" aria-label="Interactive survey background map. Drag to pan and use the zoom buttons to zoom." onPointerLeave={() => setHover(null)} />
@@ -164,7 +164,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
         {data.value?.note && <p>{data.value.note}</p>}
         {crs.note && <p className="text-amber-200">{crs.note}</p>}
         {basemap === "street" && <p><a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer" className="underline">OpenFreeMap</a> · © <a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer" className="underline">OpenMapTiles</a> · Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">OpenStreetMap</a></p>}
-        <p>{geometry ? "Map preview uses the output coordinate system. Export retains all features and vertices." : "Background imagery provides location context. Survey measurements use the source grid."}</p>
+        <p>{geometry && geometryContext === "export" ? "Map preview uses the output coordinate system. Export retains all features and vertices." : "Background imagery provides location context. Survey measurements use the source grid."}</p>
       </div>
     </div>
   )

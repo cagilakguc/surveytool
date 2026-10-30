@@ -3,6 +3,9 @@ import ReportDownloads from "../components/ReportDownloads"
 import type { SurveyReport } from "../lib/surveyReports"
 import { assertPointLayer, record } from "../lib/projectWorkspace"
 import {
+  lazy,
+  Suspense,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -25,6 +28,12 @@ import {
 } from "lucide-react"
 
 import PageSeo from "../components/PageSeo"
+import CrsPicker from "../components/CrsPicker"
+import { loadCrsCatalogue, localGridCode, readMapSettings, saveMapSettings } from "../lib/mapCoordinates"
+import type { Basemap, MapCrs, MapProjectSettings } from "../lib/mapCoordinates"
+import { buildPavementMapGeometry, pavementMapCoordinateError, pavementMapKey } from "../lib/pavementMap"
+
+const SurveyMap = lazy(() => import("../components/SurveyMap"))
 
 type SurveyPoint = {
   id: string
@@ -513,6 +522,18 @@ export default function PavementConformance() {
   const [matchMode, setMatchMode] =
     useState<MatchMode>("auto")
   const [error, setError] = useState("")
+  const mapKey = pavementMapKey(bottomFile?.name, topFile?.name)
+  const savedMapSettings = useMemo(() => readMapSettings(mapKey), [mapKey])
+  const [mapUpdates, setMapUpdates] = useState<Record<string, MapProjectSettings>>({})
+  const [mapStorageFailed, setMapStorageFailed] = useState(false)
+  const mapSettings = mapUpdates[mapKey] ?? savedMapSettings
+  function updateMapSettings(settings: MapProjectSettings) {
+    setMapUpdates((previous) => ({ ...previous, [mapKey]: settings }))
+  }
+  useEffect(() => {
+    const changed = mapUpdates[mapKey]
+    if (changed) setMapStorageFailed(!saveMapSettings(mapKey, changed))
+  }, [mapKey, mapUpdates])
 
   const comparison = useMemo(() => {
     if (!bottomFile || !topFile) {
@@ -622,6 +643,7 @@ export default function PavementConformance() {
     setToleranceMm(20)
     setCoordinateTolerance(0.05)
     setMatchMode("auto")
+    setMapUpdates((previous) => ({ ...previous, [pavementMapKey("demo-bottom-base.csv", "demo-top-ac20.csv")]: { sourceCrs: {}, defaultCrs: "EPSG:2193", basemap: "street", opacity: 90 } }))
     setError("")
   }
 
@@ -633,13 +655,13 @@ export default function PavementConformance() {
 
   const structuredReport=useMemo<SurveyReport|null>(()=>comparison&&bottomFile&&topFile?{
     title:"Pavement Conformance Report",project:`${bottomFile.name} / ${topFile.name}`,createdAt:new Date().toISOString(),
-    metadata:[["Bottom file",bottomFile.name],["Top file",topFile.name],["Target thickness (mm)",targetThicknessMm],["Tolerance (mm)",toleranceMm],["Coordinate match tolerance (m)",coordinateTolerance],["Match mode",matchMode],["CRS", "Not declared in these point files — confirm a common survey grid"],["Height units / datum","Tool assumes metres and a common vertical datum; confirm source files"]],
+    metadata:[["Bottom file",bottomFile.name],["Top file",topFile.name],["Target thickness (mm)",targetThicknessMm],["Tolerance (mm)",toleranceMm],["Coordinate match tolerance (m)",coordinateTolerance],["Match mode",matchMode],["CRS (user selected)", mapSettings.defaultCrs || "Not declared in these point files — confirm a common survey grid"],["Height units / datum","Tool assumes metres and a common vertical datum; confirm source files"]],
     summary:[["Matched points",comparison.results.length],["Passing",comparison.results.filter((row)=>row.status==="pass").length],["Failing",comparison.results.filter((row)=>row.status==="fail").length],["Unmatched bottom points",comparison.unmatchedBottom],["Unmatched top points",comparison.unmatchedTop]],
     columns:["Point ID","Easting","Northing","Bottom RL","Top RL","Thickness (mm)","Deviation (mm)","Status","Match method","Horizontal difference (m)","Code"],
     rows:comparison.results.map((row)=>[row.id,row.easting,row.northing,row.bottomElevation,row.topElevation,row.thicknessMm,row.deviationMm,row.status.toUpperCase(),row.matchMethod,row.horizontalDifference,row.code]),
     notes:["This report uses the existing pavement point-matching and thickness calculation. Unmatched points are not assessed. Both point files must use the same grid, metre units and a common vertical datum.",...bottomFile.warnings,...topFile.warnings],
     plot:{points:comparison.results.map((row)=>({easting:row.easting,northing:row.northing,colour:row.status==="pass"?"#34d399":"#fb7185"})),legend:{PASS:"#34d399",FAIL:"#fb7185"}},
-  }:null,[comparison,bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode])
+  }:null,[comparison,bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode,mapSettings.defaultCrs])
 
   function exportReport() {
     if (!comparison || comparison.results.length === 0) {
@@ -654,6 +676,7 @@ export default function PavementConformance() {
       ["Tolerance (mm)", toleranceMm],
       ["Coordinate match tolerance (m)", coordinateTolerance],
       ["Match mode", matchMode],
+      ["CRS (user selected)", mapSettings.defaultCrs || "Not specified"],
       ["Matched points", comparison.results.length],
       ["Unmatched bottom points", comparison.unmatchedBottom],
       ["Unmatched top points", comparison.unmatchedTop],
@@ -707,10 +730,13 @@ export default function PavementConformance() {
       />
 
       <div className="mx-auto max-w-7xl">
-        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode}} onRestore={(state)=>{
+        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode,mapSettings}} onRestore={(state)=>{
           for(const key of ["bottomFile","topFile"])if(state[key]!==null){const file=record(state[key]);assertPointLayer({...file,format:"CSV"})}
           const target=Number(state.targetThicknessMm),tolerance=Number(state.toleranceMm),distance=Number(state.coordinateTolerance)
           if(![target,tolerance,distance].every(Number.isFinite)||target<0||tolerance<0||distance<=0||!["auto","point-id","coordinate"].includes(String(state.matchMode)))throw new Error("Invalid saved pavement settings.")
+          const bottom=state.bottomFile as ParsedSurveyFile|null,top=state.topFile as ParsedSurveyFile|null
+          const restoredMap=readMapSettings("restore",{getItem:()=>JSON.stringify(state.mapSettings??null)})
+          setMapUpdates((previous)=>({...previous,[pavementMapKey(bottom?.name,top?.name)]:restoredMap}))
           setBottomFile(state.bottomFile as ParsedSurveyFile|null);setTopFile(state.topFile as ParsedSurveyFile|null);setTargetThicknessMm(target);setToleranceMm(tolerance);setCoordinateTolerance(distance);setMatchMode(state.matchMode as MatchMode);setError("")
         }}/>
 
@@ -942,7 +968,7 @@ export default function PavementConformance() {
                   )}
                 </section>
 
-                <ConformanceMap results={comparison.results} />
+                <ConformanceMap results={comparison.results} settings={mapSettings} onChange={updateMapSettings} storageFailed={mapStorageFailed} />
                 <ResultsTable results={comparison.results} />
               </>
             ) : (
@@ -1077,9 +1103,29 @@ function SummaryCard({
 
 function ConformanceMap({
   results,
+  settings,
+  onChange,
+  storageFailed,
 }: {
   results: ConformanceResult[]
+  settings: MapProjectSettings
+  onChange: (settings: MapProjectSettings) => void
+  storageFailed: boolean
 }) {
+  const [catalogue, setCatalogue] = useState<MapCrs[]>([])
+  const [catalogueError, setCatalogueError] = useState("")
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let active = true
+    setCatalogueError("")
+    loadCrsCatalogue().then((entries) => { if (active) setCatalogue(entries) }).catch((error) => {
+      if (active) setCatalogueError(error instanceof Error ? error.message : "Coordinate systems could not be loaded.")
+    })
+    return () => { active = false }
+  }, [retry])
+  const crs = catalogue.find((entry) => entry.code === settings.defaultCrs)
+  const coordinateError = crs ? pavementMapCoordinateError(crs) : ""
+  const geometry = useMemo(() => buildPavementMapGeometry(results), [results])
   const width = 1000
   const height = 520
   const padding = 35
@@ -1088,10 +1134,11 @@ function ConformanceMap({
     return null
   }
 
-  const minEasting = Math.min(...results.map((result) => result.easting))
-  const maxEasting = Math.max(...results.map((result) => result.easting))
-  const minNorthing = Math.min(...results.map((result) => result.northing))
-  const maxNorthing = Math.max(...results.map((result) => result.northing))
+  let minEasting = Infinity, maxEasting = -Infinity, minNorthing = Infinity, maxNorthing = -Infinity
+  for (const result of results) {
+    minEasting = Math.min(minEasting, result.easting); maxEasting = Math.max(maxEasting, result.easting)
+    minNorthing = Math.min(minNorthing, result.northing); maxNorthing = Math.max(maxNorthing, result.northing)
+  }
   const eastingRange = Math.max(maxEasting - minEasting, 1)
   const northingRange = Math.max(maxNorthing - minNorthing, 1)
   const scale = Math.min(
@@ -1104,29 +1151,7 @@ function ConformanceMap({
   const offsetY = (height - renderedHeight) / 2
   const pointStep = Math.max(1, Math.ceil(results.length / 12000))
 
-  return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-5 md:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">
-            Spatial preview
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold">
-            Thickness pass / fail map
-          </h2>
-        </div>
-        <div className="flex gap-4 text-sm text-slate-300">
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-emerald-400" />
-            Pass
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-rose-400" />
-            Fail
-          </span>
-        </div>
-      </div>
-
+  const plan = <>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="mt-5 block aspect-[1000/520] w-full rounded-2xl border border-white/10 bg-slate-950"
@@ -1157,6 +1182,7 @@ function ConformanceMap({
                 stroke="#f8fafc"
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
+                opacity={settings.opacity / 100}
               >
                 <title>
                   {`${result.id} · ${result.thicknessMm.toFixed(0)} mm · ${result.status.toUpperCase()}`}
@@ -1171,6 +1197,44 @@ function ConformanceMap({
           Preview simplified to every {pointStep}th point. The report and statistics still use every matched point.
         </p>
       )}
+  </>
+
+  return (
+    <section className="min-w-0 rounded-3xl border border-white/10 bg-white/5 p-5 md:p-6" aria-label="Pavement conformance map">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Spatial preview</p>
+          <h2 className="mt-2 text-2xl font-semibold">Thickness pass / fail map</h2>
+        </div>
+        <div className="flex gap-4 text-sm text-slate-300">
+          <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-400" />Pass</span>
+          <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-rose-400" />Fail</span>
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-slate-400">Choose the coordinate system shared by both survey files to place the results on a map. Matching, thicknesses and RLs use the original metre coordinates. For Mount Eden, search “Mount Eden” and select the correct datum/version.</p>
+      <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <CrsPicker label="Pavement survey (both files)" value={settings.defaultCrs} catalogue={catalogue} loading={!catalogue.length && !catalogueError} onChange={(code) => onChange({ ...settings, defaultCrs: code })} note="CSV/TXT files do not declare a CRS. Confirm both files use the selected projected metre grid and a common height datum." />
+        <div className="space-y-5 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+          <label className="block text-xs font-medium text-slate-300">Background
+            <select aria-label="Pavement background" value={settings.basemap} onChange={(event) => onChange({ ...settings, basemap: event.target.value as Basemap })} className="mt-2 w-full rounded-xl border border-white/15 bg-slate-900 px-3 py-3 text-sm text-white">
+              <option value="street">Street map</option><option value="aerial">Aerial / satellite (Esri)</option><option value="none">Source-grid plan</option>
+            </select>
+          </label>
+          <label className="block text-xs font-medium text-slate-300">Point opacity · {settings.opacity}%
+            <input aria-label="Pavement point opacity" type="range" min="0" max="100" value={settings.opacity} onChange={(event) => onChange({ ...settings, opacity: Number(event.target.value) })} className="mt-3 w-full accent-cyan-400" />
+          </label>
+          <p className="text-xs leading-5 text-slate-400">{storageFailed ? "Map preferences could not be saved on this device." : "Map preferences are saved for this pair of files and included in saved projects."}</p>
+        </div>
+      </div>
+      {catalogueError && <p role="alert" className="mt-4 text-sm text-amber-200">{catalogueError} <button type="button" onClick={() => setRetry((value) => value + 1)} className="underline">Retry coordinate systems</button></p>}
+      <div className="mt-5">
+        {settings.basemap !== "none" && crs && !coordinateError ? (
+          <Suspense fallback={plan}><SurveyMap crs={crs} basemap={settings.basemap} opacity={settings.opacity} geometry={geometry} geometryContext="survey" heightUnitLabel="m (top survey)" fallback={plan} /></Suspense>
+        ) : (
+          <>{settings.basemap !== "none" && <p role="status" className="text-sm text-amber-200">{coordinateError || (settings.defaultCrs === localGridCode ? "A local/unknown grid needs georeferencing before a background map can be displayed. The source-grid plan is shown below." : "Select the actual survey coordinate system to display a background map. The source-grid plan is shown below.")}</p>}{plan}</>
+        )}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-slate-400">Background-map preview: up to {geometry.points.length.toLocaleString()} of {results.length.toLocaleString()} matched points. Statistics and reports include every matched point. Background imagery is for visual context.</p>
     </section>
   )
 }
