@@ -52,7 +52,18 @@ export function buildGisMapData(crs: MapCrs, layer: SurveyGeometryLayer): Survey
     features.push(new Feature({ geometry: new LineString(coordinates(line.vertices)), group: "gis-lines", colour: "#fbbf24", name: `${line.id}${line.code ? ` · ${line.code}` : ""}` }))
   }
   if (layer.points.length) groups.push({ id: "gis-points", label: `Points (${layer.points.length.toLocaleString()})`, colour: "#22d3ee" })
-  for (const point of layer.points) {
+  let previewIndices: number[] | null = null
+  if (layer.pointColours) {
+    const budget = Math.max(0, Math.min(featureLimit - features.length, vertexLimit - drawnVertices))
+    const firstByGroup = new Map<string, number>()
+    layer.points.forEach((point, index) => { if (!firstByGroup.has(point.code)) firstByGroup.set(point.code, index) })
+    const selected = new Set(Array.from(firstByGroup.values()).slice(0, budget))
+    const remaining = budget - selected.size
+    if (remaining > 0) for (let i = 0; i < remaining; i++) selected.add(Math.floor(i * layer.points.length / remaining))
+    previewIndices = Array.from(selected).sort((a, b) => a - b)
+  }
+  for (const pointIndex of previewIndices ?? layer.points.keys()) {
+    const point = layer.points[pointIndex]
     if (!canDraw(1)) continue
     features.push(new Feature({ geometry: new Point(project(point.easting, point.northing)), group: layer.pointColours ? `status-${point.code}` : "gis-points", colour: layer.pointColours?.[point.code] ?? "#22d3ee", name: `${point.id}${point.code ? ` · ${point.code}` : ""}`, ...point }))
   }

@@ -14,6 +14,13 @@ import { angularDegreesPerUnit } from "./globalGis"
 export const maximumMapFaces = 5000
 const maximumMapPoints = 2000
 
+export function mapCoordinateToSource(crs: MapCrs, coordinate: number[]): PlanPoint {
+  const values = proj4("EPSG:3857", crs.proj4, coordinate)
+  const factor = angularDegreesPerUnit(crs)
+  if (!values || !Number.isFinite(values[0]) || !Number.isFinite(values[1])) throw new Error("The drawn section could not be converted to the selected survey grid.")
+  return { easting: values[0] / factor, northing: values[1] / factor, elevation: null }
+}
+
 export function createMapTransform(crs: MapCrs) {
   if (/\+nadgrids=(?!@null(?:\s|$))/.test(crs.proj4)) throw new Error("This CRS needs a datum grid that is not included in the browser map. Use plan view, or export the file to a supported CRS.")
   const geographic = proj4(crs.proj4, "EPSG:4326")

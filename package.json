@@ -13,7 +13,8 @@
     "test:maps": "node --import tsx scripts/validate-survey-maps.mjs",
     "test:crs": "node --import tsx scripts/validate-crs-selection.mjs",
     "test:datum": "node --import tsx scripts/validate-datum-operations.mjs",
-    "test:asbuilt": "node --import tsx scripts/validate-asbuilt.mjs"
+    "test:asbuilt": "node --import tsx scripts/validate-asbuilt.mjs",
+    "test:sections": "node --import tsx scripts/validate-sections.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

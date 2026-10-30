@@ -122,3 +122,17 @@ npm run test:asbuilt
 ```
 
 Checks include independent analytical TIN planes and exact tolerance boundaries, mixed height units, shared edges, holes, invisible faces in the actual XML worker, missing elevations, conflicting faces, malformed projects, unsafe datum pairs, unchanged source inputs, CSV formula guards, numeric Excel readback and PDF text/font output. The font is derived from DejaVu Sans; its licence is included under `public/fonts`.
+
+## Mixed-format cross sections
+
+Cross Sections shows the selected XML alignment, top design TIN, optional bottom TIN and selected CSV/TXT/DXF measured file(s) together on the background map. The bottom surface starts blank; selecting it enables thickness. “As-built point files” chooses measured data; the optional advanced reference chooses a design TIN for measured-minus-design level differences. Point search distance ±1 m includes measured points up to 1 m either side of the section, within its endpoints. Distances and heights use XML linear units; measured files must already share those units, the horizontal grid and vertical datum. The CRS picker positions the map only. Unknown/local grids retain the source-grid drawing plan.
+
+Use **Draw section line** and click two map endpoints (or drag across the source-grid plan) for irregular locations, including without an alignment. For regular sections, select an alignment and set interval (for example 5 or 10 m), width each side and chainage range. Generate up to 200 sections per batch, preview any station and export a PDF book plus complete CSV. Exact horizontal line/circular geometry and numerically integrated clothoids define interval stations and tangents. Unsupported spirals, discontinuities, inconsistent lengths and station equations block interval generation with a specific explanation; manually drawn profiles remain available. Imported sampled alignments in older workspaces may need XML re-import to recover exact geometry. No surface extrapolation is added. PDF sheets contain a profile graph and up to 8 measured rows; CSV contains every calculated sample and measured point. An as-built point can appear in more than one section when search corridors overlap.
+
+Esri aerial and OpenFreeMap street backgrounds work without an application key. To enable **Google satellite**, enable the Google **Map Tiles API** and billing in a Google Cloud project, create a browser API key restricted to that API and the production/preview HTTP referrers, and set `VITE_GOOGLE_MAPS_API_KEY` in Vercel before rebuilding. Google usage is billed by Google; do not put a server secret in this public browser variable. The OpenLayers Google source handles session tokens and viewport attribution. Google Maps attribution stays visible; reports export survey profiles, not Google imagery. Without the key, the Google choice is labelled “setup needed” and the other map/drawing workflows remain available. Failed tiles retain survey overlays. No key is written to saved project files.
+
+```sh
+npm run test:sections
+```
+
+Section checks cover independent planes, measured X/Y interpolation, optional bottom/file selections, m/ft units, line/arc/clothoid stationing, limits and unsupported geometry, original input immutability, XML worker curve direction, source/map round trips, saved settings and graphical PDF/complete CSV exports.

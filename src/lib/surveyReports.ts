@@ -127,7 +127,7 @@ export async function createReportExcel(report: SurveyReport) {
   return workbook.xlsx.writeBuffer();
 }
 let fontPromise: Promise<string> | null = null;
-async function reportFont() {
+export async function reportFont() {
   if (!fontPromise)
     fontPromise = fetch(
       `${import.meta.env?.BASE_URL ?? "/"}fonts/survey-report.ttf`,
