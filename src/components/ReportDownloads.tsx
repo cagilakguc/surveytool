@@ -10,9 +10,11 @@ import {
 export default function ReportDownloads({
   report,
   disabled = false,
+  formats = ["pdf", "xlsx", "csv"],
 }: {
   report: SurveyReport | null;
   disabled?: boolean;
+  formats?: ReadonlyArray<"pdf" | "xlsx" | "csv">;
 }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -75,7 +77,7 @@ export default function ReportDownloads({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {(["pdf", "xlsx", "csv"] as const).map((format) => (
+        {formats.map((format) => (
           <button
             key={format}
             type="button"

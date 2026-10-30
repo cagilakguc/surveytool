@@ -131,7 +131,7 @@ function sampleCurve(body, attributes) {
   )
   const rotation = (attributes.rot ?? "ccw").toLowerCase()
 
-  if (rotation.includes("cw")) {
+  if (rotation.trim() === "cw") {
     while (endAngle >= startAngle) endAngle -= Math.PI * 2
   } else {
     while (endAngle <= startAngle) endAngle += Math.PI * 2
@@ -205,6 +205,21 @@ function parseAlignmentPoints(alignmentBody) {
   }
 
   return points
+}
+
+function parseHorizontalGeometry(alignmentBody) {
+  const body = firstTagBlock(alignmentBody, "CoordGeom")?.body ?? ""
+  const expression = /<(?:[\w.-]+:)?(Line|Curve|Spiral|IrregularLine)\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?\1\s*>/gi
+  const segments = []
+  let match
+  while ((match = expression.exec(body)) !== null) {
+    const type = match[1].toLowerCase(), source = match[3]
+    const values = (firstTagBlock(source, "PntList2D")?.body ?? "").trim().split(/[\s,]+/).map(Number)
+    const points = []
+    for (let i = 0; i + 1 < values.length; i += 2) if (Number.isFinite(values[i]) && Number.isFinite(values[i + 1])) points.push({ northing: values[i], easting: values[i + 1], elevation: null })
+    segments.push({ type, start: pointFromTag(source, "Start"), end: pointFromTag(source, "End"), center: pointFromTag(source, "Center"), attributes: parseAttributes(match[2]), ...(type === "irregularline" ? { points } : {}) })
+  }
+  return segments
 }
 
 function parseSurface(block, index) {
@@ -289,6 +304,8 @@ function parseLandXmlText(xmlText, fileName) {
     length: parseNumber(block.attributes.length),
     startStation: parseNumber(block.attributes.staStart),
     points: parseAlignmentPoints(block.body),
+    horizontalGeometry: parseHorizontalGeometry(block.body),
+    hasStationEquations: /<(?:[\w.-]+:)?StaEquation\b/i.test(block.body),
   }))
 
   postProgress("Reading COGO points", 90)

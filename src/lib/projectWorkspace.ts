@@ -95,6 +95,19 @@ export function assertDocument(
       )
     )
       throw new Error("Invalid saved alignment.");
+    if (line.horizontalGeometry !== undefined) {
+      if (!Array.isArray(line.horizontalGeometry) || line.horizontalGeometry.length > 100_000) throw new Error("Invalid saved horizontal geometry.");
+      for (const rawGeometry of line.horizontalGeometry) {
+        const geometry = record(rawGeometry), attributes = record(geometry.attributes);
+        if (typeof geometry.type !== "string" || Object.values(attributes).some((v) => typeof v !== "string")) throw new Error("Invalid saved alignment geometry.");
+        for (const rawPoint of [geometry.start, geometry.end, geometry.center]) if (rawPoint !== undefined && rawPoint !== null) {
+          const point = record(rawPoint);
+          if (!Number.isFinite(point.easting) || !Number.isFinite(point.northing)) throw new Error("Invalid saved alignment coordinates.");
+        }
+        if (geometry.points !== undefined && (!Array.isArray(geometry.points) || geometry.points.length > 500_000 || geometry.points.some((p) => !p || !Number.isFinite(p.easting) || !Number.isFinite(p.northing)))) throw new Error("Invalid saved alignment point list.");
+      }
+    }
+    if (line.pointChainages !== undefined && (!Array.isArray(line.pointChainages) || line.pointChainages.length !== line.points.length || !line.pointChainages.every(Number.isFinite))) throw new Error("Invalid saved alignment chainages.");
   }
 }
 export function assertPointLayer(

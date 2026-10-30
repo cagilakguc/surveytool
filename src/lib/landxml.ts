@@ -21,6 +21,18 @@ export type LandXmlAlignment = {
   length: number | null
   startStation: number | null
   points: PlanPoint[]
+  horizontalGeometry?: AlignmentGeometry[]
+  hasStationEquations?: boolean
+  pointChainages?: number[]
+}
+
+export type AlignmentGeometry = {
+  type: string
+  start: PlanPoint | null
+  end: PlanPoint | null
+  center?: PlanPoint | null
+  attributes: Record<string, string>
+  points?: PlanPoint[]
 }
 
 export type LandXmlDocument = {
@@ -137,7 +149,7 @@ function sampleCurve(geometry: Element) {
     geometry.getAttribute("rot") ?? "ccw"
   ).toLowerCase()
 
-  if (rotation.includes("cw")) {
+  if (rotation.trim() === "cw") {
     while (endAngle >= startAngle) {
       endAngle -= Math.PI * 2
     }
@@ -338,6 +350,12 @@ export function parseLandXml(
       alignment.getAttribute("staStart"),
     ),
     points: parseAlignmentPoints(alignment),
+    horizontalGeometry: Array.from(firstElementByLocalName(alignment, "CoordGeom")?.children ?? []).map((geometry) => ({
+      type: geometry.localName.toLowerCase(), start: getGeometryPoint(geometry, "Start"), end: getGeometryPoint(geometry, "End"), center: getGeometryPoint(geometry, "Center"),
+      attributes: Object.fromEntries(Array.from(geometry.attributes).map((attribute) => [attribute.name, attribute.value])),
+      points: geometry.localName.toLowerCase() === "irregularline" ? (firstElementByLocalName(geometry, "PntList2D")?.textContent ?? "").trim().split(/\s+/).map(Number).reduce<PlanPoint[]>((points, value, i, values) => { if (i % 2 === 0 && Number.isFinite(value) && Number.isFinite(values[i + 1])) points.push({ northing: value, easting: values[i + 1], elevation: null }); return points }, []) : undefined,
+    })),
+    hasStationEquations: elementsByLocalName(alignment, "StaEquation").length > 0,
   }))
 
   const cogoPoints = elementsByLocalName(xml, "CgPoint")

@@ -1,3 +1,4 @@
+import { assertSectionSettings } from "../lib/sectionOptions"
 import ProjectPanel from "../components/ProjectPanel"
 import { assertDocument, assertPointLayer, record } from "../lib/projectWorkspace"
 import type { SectionSettings } from "../components/LandXmlCrossSection"
@@ -33,16 +34,17 @@ const demoLandXml = `<?xml version="1.0" encoding="UTF-8"?>
 <LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2" date="2026-07-22">
   <Project name="SurveyTool Cross Section Demo" />
   <Units><Metric linearUnit="meter" /></Units>
+  <CoordinateSystem name="NZTM2000" epsgCode="2193" />
   <Surfaces>
     <Surface name="Finished Surface"><Definition surfType="TIN"><Pnts>
       <P id="1">5923000 1755000 12.000</P><P id="2">5923000 1755100 12.300</P>
       <P id="3">5923100 1755100 13.100</P><P id="4">5923100 1755000 12.800</P>
-      <P id="5">5923050 1755050 12.650</P>
+      <P id="5">5923050 1755050 12.550</P>
     </Pnts><Faces><F>1 2 5</F><F>2 3 5</F><F>3 4 5</F><F>4 1 5</F></Faces></Definition></Surface>
     <Surface name="Pavement Bottom"><Definition surfType="TIN"><Pnts>
       <P id="1">5923000 1755000 11.750</P><P id="2">5923000 1755100 12.050</P>
       <P id="3">5923100 1755100 12.850</P><P id="4">5923100 1755000 12.550</P>
-      <P id="5">5923050 1755050 12.400</P>
+      <P id="5">5923050 1755050 12.300</P>
     </Pnts><Faces><F>1 2 5</F><F>2 3 5</F><F>3 4 5</F><F>4 1 5</F></Faces></Definition></Surface>
   </Surfaces>
   <Alignments><Alignment name="Road Centreline" length="113.137" staStart="1200.000">
@@ -54,14 +56,12 @@ const demoAsbuilt: SurveyPointLayer = {
   name: "demo-asbuilt.csv",
   format: "CSV",
   warnings: [],
-  points: [
-    { id: "AB01", easting: 1755020, northing: 5923080, elevation: 12.208, code: "AC20" },
-    { id: "AB02", easting: 1755032, northing: 5923068, elevation: 12.321, code: "AC20" },
-    { id: "AB03", easting: 1755044, northing: 5923056, elevation: 12.438, code: "AC20" },
-    { id: "AB04", easting: 1755056, northing: 5923044, elevation: 12.557, code: "AC20" },
-    { id: "AB05", easting: 1755068, northing: 5923032, elevation: 12.672, code: "AC20" },
-    { id: "AB06", easting: 1755080, northing: 5923020, elevation: 12.791, code: "AC20" },
-  ],
+  points: Array.from({ length: 12 }, (_, station) => [-5, 0, 5].map((offset, index) => {
+    const along = station * 10 / Math.SQRT2
+    const easting = 1755010 + along - offset / Math.SQRT2
+    const northing = 5923010 + along + offset / Math.SQRT2
+    return { id: `AB${station + 1}-${index + 1}`, easting, northing, elevation: 12 + (easting - 1755000) * 0.003 + (northing - 5923000) * 0.008 + [0.005, -0.012, 0.015][index], code: "AC20" }
+  })).flat(),
 }
 
 function extensionOf(fileName: string) {
@@ -100,6 +100,7 @@ function mergeDocuments(current: LandXmlDocument | null, incoming: LandXmlDocume
 
 export default function CrossSectionTool() {
   const inputRef = useRef<HTMLInputElement>(null)
+  const pointInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const documentRef = useRef<LandXmlDocument | null>(null)
   const pointLayersRef = useRef<SurveyPointLayer[]>([])
@@ -278,7 +279,7 @@ export default function CrossSectionTool() {
           state.pointLayers.forEach(assertPointLayer)
           const doc=state.document as LandXmlDocument|null,layers=state.pointLayers as SurveyPointLayer[]
           const saved=state.sectionSettings===null?null:record(state.sectionSettings)
-          if(saved){for(const key of ["alignmentName","topSurfaceName","bottomSurfaceName","referenceSurfaceName"])if(typeof saved[key]!=="string")throw new Error("Invalid saved section selections.");if(!Number.isFinite(saved.corridor)||Number(saved.corridor)<=0)throw new Error("Invalid saved section corridor.");if(saved.line!==null){const section=record(saved.line);for(const key of ["start","end"]){const point=record(section[key]);if(!Number.isFinite(point.easting)||!Number.isFinite(point.northing))throw new Error("Invalid saved section endpoints.")}}}
+          if(saved)assertSectionSettings(saved)
           documentRef.current=doc;pointLayersRef.current=layers;setDocument(doc);setPointLayers(layers);setXmlFiles(Array.isArray(state.xmlFiles)?state.xmlFiles.filter((x):x is string=>typeof x==="string"):[]);setPointFiles(Array.isArray(state.pointFiles)?state.pointFiles.filter((x):x is string=>typeof x==="string"):[]);setSectionSettings(saved as SectionSettings|null);setShowWorkspace(true);setError("")
         }}/>
         {!hasFiles ? (
@@ -333,7 +334,7 @@ export default function CrossSectionTool() {
                 <p className="mt-2 text-sm text-amber-200/80">Your as-built points have been kept. Add the XML containing the design or pavement surface; an alignment XML is optional but required for chainage.</p>
               </section>
             ) : showWorkspace ? (
-              <LandXmlCrossSection document={document} pointLayers={pointLayers} settings={sectionSettings} onSettingsChange={setSectionSettings} />
+              <LandXmlCrossSection document={document} pointLayers={pointLayers} settings={sectionSettings} onSettingsChange={setSectionSettings} onAddPointFiles={isReading?undefined:()=>pointInputRef.current?.click()} />
             ) : (
               <section className="rounded-3xl border border-white/10 bg-white/5 p-7 text-center">
                 <Eye size={34} className="mx-auto text-cyan-300" />
@@ -358,6 +359,7 @@ export default function CrossSectionTool() {
           </div>
         )}
 
+        <input ref={pointInputRef} type="file" multiple accept=".csv,.txt,.dxf,text/csv,text/plain,application/dxf" onChange={handleFileChange} className="hidden" />
         <input
           ref={inputRef}
           type="file"
