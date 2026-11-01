@@ -28,7 +28,7 @@ import { horizontalAlignment } from "../lib/alignmentGeometry"
 import "ol/ol.css"
 import "./SurveyMap.css"
 
-type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[] }
+type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string }
 type Hover = { name: string; easting?: number; northing?: number; elevation?: number; difference?: number; coordinateLabel?: string }
 
 function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>) {
@@ -50,7 +50,7 @@ function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>
   return style
 }
 
-export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines }: SurveyMapProps) {
+export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName }: SurveyMapProps) {
   const target = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const vectorRef = useRef<VectorLayer | null>(null)
@@ -155,7 +155,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     if (!document || !showChainages) return
     try {
       const project = createMapTransform(crs)
-      for (const alignment of document.alignments) {
+      for (const alignment of document.alignments.filter((item) => !selectedAlignmentName || item.name === selectedAlignmentName)) {
         const range = horizontalAlignment(alignment)
         const first = Math.ceil((range.start - 1e-7) / 10) * 10
         for (let chainage = first; chainage <= range.end + 1e-7; chainage += 10) {
@@ -174,7 +174,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     } catch {
       // Unsupported alignments remain visible without generated station markers.
     }
-  }, [document, crs, showChainages, canRender])
+  }, [document, crs, showChainages, selectedAlignmentName, canRender])
 
   useEffect(() => { vectorRef.current?.setOpacity(opacity / 100) }, [opacity, data])
 
