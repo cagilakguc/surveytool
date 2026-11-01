@@ -8,3 +8,11 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch((error: unknown) => {
+      console.warn("SurveyTool app offline shell unavailable:", error)
+    })
+  })
+}
