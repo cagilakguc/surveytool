@@ -29,6 +29,8 @@ export type SurveyGeometryLayer = {
   polygons: SurveyPolygonFeature[]
   warnings: string[]
   pointColours?: Record<string, string>
+  lineColour?: string
+  polygonColour?: string
 }
 
 type DxfPair = {
