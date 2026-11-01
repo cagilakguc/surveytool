@@ -24,6 +24,8 @@ import type { LandXmlDocument } from "../lib/landxml"
 import { countLandXmlGeometry, parseLandXmlFile } from "../lib/landxmlAsync"
 import { parseSurveyPointFile } from "../lib/surveyPoints"
 import type { SurveyPointLayer } from "../lib/surveyPoints"
+import { parseSurveyGeometryFile } from "../lib/surveyGeometry"
+import type { SurveyGeometryLayer } from "../lib/surveyGeometry"
 
 const maximumFileSize = 100 * 1024 * 1024
 const automaticWorkspaceFaceLimit = 20_000
@@ -101,11 +103,14 @@ function mergeDocuments(current: LandXmlDocument | null, incoming: LandXmlDocume
 export default function CrossSectionTool() {
   const inputRef = useRef<HTMLInputElement>(null)
   const pointInputRef = useRef<HTMLInputElement>(null)
+  const lineMarkingInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const documentRef = useRef<LandXmlDocument | null>(null)
   const pointLayersRef = useRef<SurveyPointLayer[]>([])
   const [document, setDocument] = useState<LandXmlDocument | null>(null)
   const [pointLayers, setPointLayers] = useState<SurveyPointLayer[]>([])
+  const [lineMarking, setLineMarking] = useState<SurveyGeometryLayer | null>(null)
+  const [readingLineMarking, setReadingLineMarking] = useState(false)
   const [xmlFiles, setXmlFiles] = useState<string[]>([])
   const [pointFiles, setPointFiles] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -206,6 +211,29 @@ export default function CrossSectionTool() {
     event.target.value = ""
   }
 
+  async function handleLineMarkingFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith(".dxf") || file.size > maximumFileSize) {
+      setError("Choose an ASCII DXF line-marking file no larger than 100 MB.")
+      return
+    }
+    setReadingLineMarking(true)
+    setError("")
+    try {
+      const layer = await parseSurveyGeometryFile(file)
+      if (!layer.lines.length && !layer.points.length && !layer.polygons.length) {
+        throw new Error("This DXF contains no supported line, polyline or point geometry.")
+      }
+      setLineMarking(layer)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "The line-marking DXF could not be read.")
+    } finally {
+      setReadingLineMarking(false)
+    }
+  }
+
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
     setIsDragging(false)
@@ -220,6 +248,7 @@ export default function CrossSectionTool() {
     pointLayersRef.current = [demoAsbuilt]
     setDocument(parsed)
     setPointLayers([demoAsbuilt])
+    setLineMarking(null)
     setXmlFiles(["cross-section-demo.xml"])
     setPointFiles(["demo-asbuilt.csv"])
     setShowWorkspace(true)
@@ -234,6 +263,7 @@ export default function CrossSectionTool() {
     pointLayersRef.current = []
     setDocument(null)
     setPointLayers([])
+    setLineMarking(null)
     setXmlFiles([])
     setPointFiles([])
     setShowWorkspace(false)
@@ -273,14 +303,18 @@ export default function CrossSectionTool() {
           </div>
         </div>
 
-        <ProjectPanel tool="sections" disabled={isReading} state={{document,pointLayers,xmlFiles,pointFiles,sectionSettings}} onRestore={(state)=>{
+        <ProjectPanel tool="sections" disabled={isReading} state={{document,pointLayers,xmlFiles,pointFiles,sectionSettings,lineMarking}} onRestore={(state)=>{
           if(state.document!==null)assertDocument(state.document)
           if(!Array.isArray(state.pointLayers)||state.pointLayers.length>100)throw new Error("Invalid saved point layers.")
           state.pointLayers.forEach(assertPointLayer)
           const doc=state.document as LandXmlDocument|null,layers=state.pointLayers as SurveyPointLayer[]
+          const restoredMarking=state.lineMarking==null?null:record(state.lineMarking)
+          if(restoredMarking){
+            if(restoredMarking.format!=="DXF"||typeof restoredMarking.name!=="string"||!Array.isArray(restoredMarking.lines)||!Array.isArray(restoredMarking.points)||!Array.isArray(restoredMarking.polygons))throw new Error("Invalid saved line-marking DXF.")
+          }
           const saved=state.sectionSettings===null?null:record(state.sectionSettings)
           if(saved)assertSectionSettings(saved)
-          documentRef.current=doc;pointLayersRef.current=layers;setDocument(doc);setPointLayers(layers);setXmlFiles(Array.isArray(state.xmlFiles)?state.xmlFiles.filter((x):x is string=>typeof x==="string"):[]);setPointFiles(Array.isArray(state.pointFiles)?state.pointFiles.filter((x):x is string=>typeof x==="string"):[]);setSectionSettings(saved as SectionSettings|null);setShowWorkspace(true);setError("")
+          documentRef.current=doc;pointLayersRef.current=layers;setDocument(doc);setPointLayers(layers);setXmlFiles(Array.isArray(state.xmlFiles)?state.xmlFiles.filter((x):x is string=>typeof x==="string"):[]);setPointFiles(Array.isArray(state.pointFiles)?state.pointFiles.filter((x):x is string=>typeof x==="string"):[]);setSectionSettings(saved as SectionSettings|null);setLineMarking(restoredMarking as SurveyGeometryLayer|null);setShowWorkspace(true);setError("")
         }}/>
         {!hasFiles ? (
           <UploadPanel
@@ -334,7 +368,7 @@ export default function CrossSectionTool() {
                 <p className="mt-2 text-sm text-amber-200/80">Your as-built points have been kept. Add the XML containing the design or pavement surface; an alignment XML is optional but required for chainage.</p>
               </section>
             ) : showWorkspace ? (
-              <LandXmlCrossSection document={document} pointLayers={pointLayers} settings={sectionSettings} onSettingsChange={setSectionSettings} onAddPointFiles={isReading?undefined:()=>pointInputRef.current?.click()} />
+              <LandXmlCrossSection document={document} pointLayers={pointLayers} lineMarking={lineMarking} settings={sectionSettings} onSettingsChange={setSectionSettings} onAddPointFiles={isReading?undefined:()=>pointInputRef.current?.click()} onAddLineMarking={readingLineMarking?undefined:()=>lineMarkingInputRef.current?.click()} onClearLineMarking={()=>setLineMarking(null)} readingLineMarking={readingLineMarking} />
             ) : (
               <section className="rounded-3xl border border-white/10 bg-white/5 p-7 text-center">
                 <Eye size={34} className="mx-auto text-cyan-300" />
@@ -359,6 +393,7 @@ export default function CrossSectionTool() {
           </div>
         )}
 
+        <input ref={lineMarkingInputRef} type="file" accept=".dxf,application/dxf" onChange={(event)=>void handleLineMarkingFile(event)} className="hidden" />
         <input ref={pointInputRef} type="file" multiple accept=".csv,.txt,.dxf,text/csv,text/plain,application/dxf" onChange={handleFileChange} className="hidden" />
         <input
           ref={inputRef}
