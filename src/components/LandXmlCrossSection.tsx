@@ -185,7 +185,7 @@ export default function LandXmlCrossSection({ document, pointLayers, lineMarking
     return batch.find((section)=>section.line===line)??analyseSection(line, corridor, alignment)
   }, [alignment, corridor, isDrawing, line, analyseSection,batch])
 
-  const bookSettings=useMemo<Omit<SectionBook,"sections"|"interval">>(()=>({document,surfaceIndices:shownSurfaceIndexes,pointFiles:activePointLayers.map((layer)=>layer.name),unitLabel,alignment:alignmentName,corridor,top:topSurfaceName,bottom:bottomSurfaceName,reference:referenceSurfaceName,crs:current.mapCrs??declaredEpsgCode(document.coordinateSystem)??document.coordinateSystem?.name??""}),[document,shownSurfaceIndexes,activePointLayers,unitLabel,alignmentName,corridor,topSurfaceName,bottomSurfaceName,referenceSurfaceName,current.mapCrs])
+  const bookSettings=useMemo<Omit<SectionBook,"sections"|"interval">>(()=>({document,surfaceIndices:shownSurfaceIndexes,pointFiles:activePointLayers.map((layer)=>layer.name),unitLabel,alignment:alignmentName,corridor,top:topSurfaceName,bottom:bottomSurfaceName,reference:referenceSurfaceName,crs:current.mapCrs??declaredEpsgCode(document.coordinateSystem)??document.coordinateSystem?.name??"",job:current.reportJob??"",client:current.reportClient??"",surveyor:current.reportSurveyor??"",lowerToleranceMm:current.lowerToleranceMm??null,upperToleranceMm:current.upperToleranceMm??null}),[document,shownSurfaceIndexes,activePointLayers,unitLabel,alignmentName,corridor,topSurfaceName,bottomSurfaceName,referenceSurfaceName,current.mapCrs,current.reportJob,current.reportClient,current.reportSurveyor,current.lowerToleranceMm,current.upperToleranceMm])
   const batchBook=useMemo<SectionBook|null>(()=>batch.length?{...bookSettings,sections:batch,interval}:null,[bookSettings,batch,interval])
   const singleBook=useMemo<SectionBook|null>(()=>result?{...bookSettings,sections:[result]}:null,[bookSettings,result])
 
@@ -305,6 +305,29 @@ export default function LandXmlCrossSection({ document, pointLayers, lineMarking
           <summary className="cursor-pointer text-sm text-cyan-200">Design reference for level differences: {referenceSurfaceName||"None"}</summary>
           <div className="mt-3 max-w-lg"><SelectControl label="Compare measured RLs against" value={referenceSurfaceName} onChange={setReferenceSurfaceName} options={document.surfaces.map((item)=>item.name)} emptyLabel="None — plot measured levels only" /></div>
           <p className="mt-2 text-xs leading-5 text-slate-400">This is the XML design surface used for measured-minus-design differences. It follows the top/design selection unless you choose another reference here.</p>
+        </details>
+        <details className="rounded-xl border border-emerald-400/25 bg-emerald-400/5 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-emerald-200">PDF conformance report settings (optional)</summary>
+          <p className="mt-2 text-xs leading-5 text-slate-400">Enter the project's signed acceptance limits for measured RL minus design RL in millimetres. For example, -150 and +50. These are examples only, not default criteria. Leave both blank for a profile-only PDF.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <label className="text-xs text-slate-300">Job / contract
+              <input type="text" maxLength={200} value={current.reportJob??""} onChange={(event)=>update({reportJob:event.target.value})} placeholder="EB3C" className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
+            <label className="text-xs text-slate-300">Client
+              <input type="text" maxLength={200} value={current.reportClient??""} onChange={(event)=>update({reportClient:event.target.value})} placeholder="Client / contractor" className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
+            <label className="text-xs text-slate-300">Prepared by
+              <input type="text" maxLength={200} value={current.reportSurveyor??""} onChange={(event)=>update({reportSurveyor:event.target.value})} placeholder="Surveyor name" className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
+            <label className="text-xs text-slate-300">Lower tolerance (mm)
+              <input type="number" step="any" value={current.lowerToleranceMm??""} onChange={(event)=>update({lowerToleranceMm:event.target.value===""?null:Number(event.target.value)})} placeholder="e.g. -150" className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
+            <label className="text-xs text-slate-300">Upper tolerance (mm)
+              <input type="number" step="any" value={current.upperToleranceMm??""} onChange={(event)=>update({upperToleranceMm:event.target.value===""?null:Number(event.target.value)})} placeholder="e.g. +50" className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
+          </div>
+          {(current.lowerToleranceMm!=null)!==(current.upperToleranceMm!=null) ? <p role="status" className="mt-3 text-xs text-amber-200">Enter both tolerance limits to enable pass/fail assessment.</p> : current.lowerToleranceMm!=null&&current.upperToleranceMm!=null&&current.lowerToleranceMm>current.upperToleranceMm ? <p role="alert" className="mt-3 text-xs text-rose-200">Lower tolerance must be less than or equal to upper tolerance.</p> : <p className="mt-3 text-xs text-emerald-200">{current.lowerToleranceMm!=null&&current.upperToleranceMm!=null?"Pass/fail will be included in section PDFs and CSV downloads.":"Profile-only report. No pass/fail status will be assigned."}</p>}
+          <p className="mt-2 text-xs text-slate-400">Unassessed points are never counted as passes. Confirm the specification, shared coordinate system and vertical datum before submitting a report.</p>
         </details>
       </div>
 
