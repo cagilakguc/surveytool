@@ -40,16 +40,16 @@ export function buildGisMapData(crs: MapCrs, layer: SurveyGeometryLayer): Survey
     return true
   }
   const total = layer.points.length + layer.lines.length + layer.polygons.length
-  if (layer.polygons.length) groups.push({ id: "gis-polygons", label: `Polygons (${layer.polygons.length.toLocaleString()})`, colour: "#60a5fa" })
+  if (layer.polygons.length) groups.push({ id: "gis-polygons", label: `Polygons (${layer.polygons.length.toLocaleString()})`, colour: layer.polygonColour ?? "#60a5fa" })
   for (const polygon of layer.polygons) {
     const count = polygon.rings.reduce((sum, ring) => sum + ring.length, 0)
     if (!canDraw(count)) continue
-    features.push(new Feature({ geometry: new Polygon(polygon.rings.map(coordinates)), group: "gis-polygons", colour: "#60a5fa", name: `${polygon.id}${polygon.code ? ` · ${polygon.code}` : ""}` }))
+    features.push(new Feature({ geometry: new Polygon(polygon.rings.map(coordinates)), group: "gis-polygons", colour: layer.polygonColour ?? "#60a5fa", name: `${polygon.id}${polygon.code ? ` · ${polygon.code}` : ""}` }))
   }
-  if (layer.lines.length) groups.push({ id: "gis-lines", label: `Lines (${layer.lines.length.toLocaleString()})`, colour: "#fbbf24" })
+  if (layer.lines.length) groups.push({ id: "gis-lines", label: `Lines (${layer.lines.length.toLocaleString()})`, colour: layer.lineColour ?? "#fbbf24" })
   for (const line of layer.lines) {
     if (!canDraw(line.vertices.length)) continue
-    features.push(new Feature({ geometry: new LineString(coordinates(line.vertices)), group: "gis-lines", colour: "#fbbf24", name: `${line.id}${line.code ? ` · ${line.code}` : ""}` }))
+    features.push(new Feature({ geometry: new LineString(coordinates(line.vertices)), group: "gis-lines", colour: layer.lineColour ?? "#fbbf24", name: `${line.id}${line.code ? ` · ${line.code}` : ""}` }))
   }
   if (layer.points.length) groups.push({ id: "gis-points", label: `Points (${layer.points.length.toLocaleString()})`, colour: "#22d3ee" })
   let previewIndices: number[] | null = null
