@@ -22,6 +22,7 @@ export type SectionSettings = {
   sectionHalfWidth?: number
   sectionStart?: number
   sectionEnd?: number
+  sectionOnlyWithPoints?: boolean
 }
 
 export function assertSectionSettings(value: Record<string, unknown>) {
@@ -31,6 +32,7 @@ export function assertSectionSettings(value: Record<string, unknown>) {
   if (value.mapBasemap !== undefined && !["street", "aerial", "google", "none"].includes(String(value.mapBasemap))) throw new Error("Invalid saved section background.")
   if (value.mapOpacity !== undefined && (!Number.isFinite(value.mapOpacity) || Number(value.mapOpacity) < 0 || Number(value.mapOpacity) > 100)) throw new Error("Invalid saved map opacity.")
   for (const key of ["sectionInterval", "sectionHalfWidth", "sectionStart", "sectionEnd"]) if (value[key] !== undefined && (!Number.isFinite(value[key]) || (["sectionInterval", "sectionHalfWidth"].includes(key) && Number(value[key]) <= 0))) throw new Error("Invalid saved alignment section settings.")
+  if (value.sectionOnlyWithPoints !== undefined && typeof value.sectionOnlyWithPoints !== "boolean") throw new Error("Invalid saved section point filter.")
   if (value.line !== null) {
     const line = value.line as SectionLine | undefined
     if (!line || ![line.start?.easting, line.start?.northing, line.end?.easting, line.end?.northing].every(Number.isFinite)) throw new Error("Invalid saved section endpoints.")
@@ -45,6 +47,7 @@ export function initialSectionSettings(document: LandXmlDocument): SectionSettin
     referenceSurfaceName: document.surfaces[0]?.name ?? "",
     asbuiltLayerName: allSectionPointFiles,
     corridor: 1,
+    sectionOnlyWithPoints: false,
     line: null,
   }
 }
