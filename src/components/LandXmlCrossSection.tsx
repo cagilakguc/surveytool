@@ -7,6 +7,7 @@ import { X } from "lucide-react"
 
 import type { LandXmlDocument, LandXmlSurface, PlanPoint } from "../lib/landxml"
 import type { SurveyPointLayer } from "../lib/surveyPoints"
+import type { SurveyGeometryLayer } from "../lib/surveyGeometry"
 import { allSectionPointFiles, calculateSectionThickness, initialSectionSettings, reconcileSectionSettings, sectionPointLayers, sectionUnitLabel } from "../lib/sectionOptions"
 import type { SectionLine, SectionSample as Sample, SectionSettings, SectionThickness as ThicknessStats } from "../lib/sectionOptions"
 import { createSectionAnalysis } from "../lib/sectionAnalysis"
@@ -22,6 +23,10 @@ export type { SectionSettings } from "../lib/sectionOptions"
 type Props = {
   document: LandXmlDocument
   pointLayers: SurveyPointLayer[]
+  lineMarking?: SurveyGeometryLayer | null
+  onAddLineMarking?: () => void
+  onClearLineMarking?: () => void
+  readingLineMarking?: boolean
   settings?:SectionSettings|null
   onSettingsChange?:(settings:SectionSettings)=>void
   onAddPointFiles?: () => void
@@ -35,7 +40,7 @@ const padding = 34
 const surfaceColours = ["#22d3ee", "#60a5fa", "#a78bfa", "#34d399", "#f472b6"]
 const pointColours = ["#fb923c", "#e879f9", "#facc15", "#2dd4bf", "#fb7185", "#818cf8"]
 
-function boundsFor(document: LandXmlDocument, pointLayers: SurveyPointLayer[]) {
+function boundsFor(document: LandXmlDocument, pointLayers: SurveyPointLayer[], lineMarking?: SurveyGeometryLayer | null) {
   let minE = Number.POSITIVE_INFINITY
   let maxE = Number.NEGATIVE_INFINITY
   let minN = Number.POSITIVE_INFINITY
@@ -53,6 +58,9 @@ function boundsFor(document: LandXmlDocument, pointLayers: SurveyPointLayer[]) {
   document.surfaces.forEach((surface) => Object.values(surface.points).forEach(include))
   document.alignments.forEach((alignment) => alignment.points.forEach(include))
   pointLayers.forEach((layer) => layer.points.forEach(include))
+  lineMarking?.points.forEach(include)
+  lineMarking?.lines.forEach((line) => line.vertices.forEach(include))
+  lineMarking?.polygons.forEach((polygon) => polygon.rings.forEach((ring) => ring.forEach(include)))
 
   return count ? { minE, maxE, minN, maxN } : null
 }
@@ -89,7 +97,7 @@ function formatChainage(value: number | null) {
   return `${kilometres}+${(value - kilometres * 1000).toFixed(3).padStart(7, "0")}`
 }
 
-export default function LandXmlCrossSection({ document, pointLayers, settings, onSettingsChange, onAddPointFiles }: Props) {
+export default function LandXmlCrossSection({ document, pointLayers, lineMarking, onAddLineMarking, onClearLineMarking, readingLineMarking, settings, onSettingsChange, onAddPointFiles }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ pointerId: number; start: PlanPoint } | null>(null)
   const [localSettings,setLocalSettings]=useState<SectionSettings>(()=>initialSectionSettings(document))
@@ -113,7 +121,7 @@ export default function LandXmlCrossSection({ document, pointLayers, settings, o
 
   const selectedAlignment = useMemo(() => { const source = document.alignments.find((item) => item.name === alignmentName); if (!source) return undefined; try { return horizontalAlignment(source).preview() } catch { return source } }, [document.alignments, alignmentName])
   const visibleDocument=useMemo(()=>({...document,cogoPoints:[],surfaces:shownSurfaceIndexes.map((index)=>document.surfaces[index]),alignments:selectedAlignment?[selectedAlignment]:[]}),[document,shownSurfaceIndexes,selectedAlignment])
-  const bounds = useMemo(() => boundsFor(visibleDocument, activePointLayers), [visibleDocument, activePointLayers])
+  const bounds = useMemo(() => boundsFor(visibleDocument, activePointLayers, lineMarking), [visibleDocument, activePointLayers, lineMarking])
   const mapProjection = useMemo(() => (bounds ? projection(bounds) : null), [bounds])
   const analyseSection = useMemo(() => createSectionAnalysis(document, activePointLayers, referenceSurfaceName), [document, activePointLayers, referenceSurfaceName])
   const alignment = selectedAlignment
@@ -265,6 +273,19 @@ export default function LandXmlCrossSection({ document, pointLayers, settings, o
             <input aria-label={`Point search distance (±${unitLabel})`} type="number" min="0.05" max="20" step="0.05" value={corridor} onChange={(event) => setCorridor(Math.max(0.05, Math.min(20, Number(event.target.value) || 0.05)))} className="w-full min-w-0 rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-white outline-none focus:border-cyan-400" />
           </label>
         </div>
+        <div className="rounded-xl border border-violet-400/25 bg-violet-400/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-violet-200">Line marking DXF (optional)</p>
+              <p className="mt-1 text-xs text-slate-400">{lineMarking ? `${lineMarking.name} · ${lineMarking.lines.length} lines · ${lineMarking.points.length} points · ${lineMarking.polygons.length} polygons` : "Add your line-marking drawing to show its geometry alongside the alignment and as-built points."}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {onAddLineMarking&&<button type="button" onClick={onAddLineMarking} className="rounded-full border border-violet-300/50 px-4 py-2 text-xs font-semibold text-violet-100 hover:bg-violet-300/10">{readingLineMarking?"Reading DXF…":lineMarking?"Replace DXF":"Choose line-marking DXF"}</button>}
+              {lineMarking&&onClearLineMarking&&<button type="button" onClick={onClearLineMarking} className="text-xs text-slate-300 underline">Remove</button>}
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-violet-200/80">Displayed in violet on the map. The DXF must use the same survey grid as the LandXML and as-built data. Line markings are for visual reference only, not design RL comparisons.</p>
+        </div>
         <p className="text-xs leading-5 text-slate-400">A search distance of {corridor} {unitLabel} includes measured points up to {corridor} {unitLabel} either side of a section line, between its endpoints. Points keep their measured RLs. The shaded pink band in the source-grid plan shows this area. {linearScale===null&&"The XML does not declare supported linear units; confirm its units before comparing levels."}</p>
         <details className="rounded-xl border border-white/10 p-3">
           <summary className="cursor-pointer text-sm text-cyan-200">Design reference for level differences: {referenceSurfaceName||"None"}</summary>
@@ -273,7 +294,7 @@ export default function LandXmlCrossSection({ document, pointLayers, settings, o
         </details>
       </div>
 
-      <CrossSectionWorkspaceMap document={visibleDocument} pointLayers={activePointLayers} settings={current} onChange={update} onDraw={(drawn)=>{setIsDrawing(false);setLine(drawn);setShowResult(true)}} sectionLines={batchLines} fallback={<div className="relative mt-5 overflow-hidden rounded-2xl border border-white/10 bg-slate-950">
+      <CrossSectionWorkspaceMap document={visibleDocument} pointLayers={activePointLayers} lineMarking={lineMarking} settings={current} onChange={update} onDraw={(drawn)=>{setIsDrawing(false);setLine(drawn);setShowResult(true)}} sectionLines={batchLines} fallback={<div className="relative mt-5 overflow-hidden rounded-2xl border border-white/10 bg-slate-950">
         {bounds && mapProjection ? (
           <svg
             ref={svgRef}
@@ -322,6 +343,8 @@ export default function LandXmlCrossSection({ document, pointLayers, settings, o
               />
             ))}
 
+            {lineMarking?.lines.slice(0, 5000).map((item, index) => <polyline key={`marking-line-${index}`} points={item.vertices.map((point)=>{const p=mapProjection.project(point);return `${p.x},${p.y}`}).join(" ")} fill="none" stroke="#a78bfa" strokeWidth="2.5" vectorEffect="non-scaling-stroke" pointerEvents="none"/>)}
+            {lineMarking?.points.slice(0, 5000).map((point,index)=>{const p=mapProjection.project(point);return <circle key={`marking-point-${index}`} cx={p.x} cy={p.y} r="3" fill="#a78bfa" stroke="#020617" strokeWidth="1" pointerEvents="none"/>})}
             {activePointLayers.map((layer, layerIndex) => {
               const step = Math.max(1, Math.ceil(layer.points.length / 5000))
               return (
