@@ -12,8 +12,8 @@ import type { SectionLine, SectionSettings } from "../lib/sectionOptions"
 const SurveyMap = lazy(() => import("./SurveyMap"))
 const googleReady = Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim())
 const colours = ["#fb923c", "#e879f9", "#facc15", "#2dd4bf", "#fb7185", "#818cf8"]
-export default function CrossSectionWorkspaceMap({ document, pointLayers, settings, onChange, onDraw, sectionLines, fallback }: {
-  document: LandXmlDocument; pointLayers: SurveyPointLayer[]; settings: SectionSettings; onChange: (value: Partial<SectionSettings>) => void;
+export default function CrossSectionWorkspaceMap({ document, pointLayers, lineMarking, settings, onChange, onDraw, sectionLines, fallback }: {
+  document: LandXmlDocument; pointLayers: SurveyPointLayer[]; lineMarking?: SurveyGeometryLayer | null; settings: SectionSettings; onChange: (value: Partial<SectionSettings>) => void;
   onDraw: (line: SectionLine) => void; sectionLines: SectionLine[]; fallback: ReactNode
 }) {
   const [catalogue, setCatalogue] = useState<MapCrs[]>([]), [error, setError] = useState(""), [retry, setRetry] = useState(0)
@@ -22,9 +22,9 @@ export default function CrossSectionWorkspaceMap({ document, pointLayers, settin
   const basemap = settings.mapBasemap ?? (googleReady ? "google" : "aerial")
   const crs = catalogue.find((entry) => entry.code === code)
   const unitError = crs ? isGeographicCrs(crs) ? "Choose the actual projected survey grid to position the section workspace." : mapInputUnitError(document, crs) : ""
-  const geometry = useMemo<SurveyGeometryLayer>(() => ({ name: "Selected as-built files", format: "CSV", warnings: [], lines: [], polygons: [], pointColours: Object.fromEntries(pointLayers.map((layer, index) => [layer.name, colours[index % colours.length]])),
-    points: pointLayers.flatMap((layer) => layer.points.map((point) => ({ ...point, id: `${point.id}${point.code ? ` · ${point.code}` : ""}`, code: layer.name }))),
-  }), [pointLayers])
+  const geometry = useMemo<SurveyGeometryLayer>(() => ({ name: "Cross-section overlays", format: "DXF", warnings: [], lines: lineMarking?.lines ?? [], polygons: lineMarking?.polygons ?? [], lineColour: "#a78bfa", polygonColour: "#a78bfa", pointColours: { ...Object.fromEntries(pointLayers.map((layer, index) => [layer.name, colours[index % colours.length]])), "Line marking DXF": "#a78bfa" },
+    points: [...pointLayers.flatMap((layer) => layer.points.map((point) => ({ ...point, id: `${point.id}${point.code ? ` · ${point.code}` : ""}`, code: layer.name }))), ...(lineMarking?.points ?? []).map((point) => ({ ...point, code: "Line marking DXF" }))],
+  }), [pointLayers, lineMarking])
   return <div className="mt-5 space-y-4">
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <CrsPicker label="Cross-section workspace" value={code} onChange={(mapCrs) => onChange({ mapCrs })} catalogue={catalogue} loading={!catalogue.length && !error} note="Choose the actual common grid used by the XML and measured files. This positions the map and drawn lines; it does not convert the input files." />
@@ -38,6 +38,6 @@ export default function CrossSectionWorkspaceMap({ document, pointLayers, settin
       </div>
     </div>
     {error&&<p role="alert" className="text-sm text-amber-200">{error} <button type="button" onClick={()=>setRetry((value)=>value+1)} className="underline">Retry</button></p>}
-    {basemap!=="none"&&crs&&!unitError ? <Suspense fallback={fallback}><SurveyMap document={document} geometry={geometry.points.length?geometry:undefined} geometryContext="survey" crs={crs} basemap={basemap} opacity={settings.mapOpacity ?? 90} onSectionDraw={onDraw} sectionLine={settings.line} sectionLines={sectionLines} selectedAlignmentName={settings.alignmentName} fallback={fallback} /></Suspense> : <>{basemap!=="none"&&<p role="status" className="text-sm text-amber-200">{unitError || (code===localGridCode ? "This local grid is not georeferenced. Draw sections in the plan below." : "Choose the actual survey coordinate system to display a background map. You can draw in the source-grid plan below.")}</p>}{fallback}</>}
+    {basemap!=="none"&&crs&&!unitError ? <Suspense fallback={fallback}><SurveyMap document={document} geometry={geometry.points.length||geometry.lines.length||geometry.polygons.length?geometry:undefined} geometryContext="survey" crs={crs} basemap={basemap} opacity={settings.mapOpacity ?? 90} onSectionDraw={onDraw} sectionLine={settings.line} sectionLines={sectionLines} selectedAlignmentName={settings.alignmentName} fallback={fallback} /></Suspense> : <>{basemap!=="none"&&<p role="status" className="text-sm text-amber-200">{unitError || (code===localGridCode ? "This local grid is not georeferenced. Draw sections in the plan below." : "Choose the actual survey coordinate system to display a background map. You can draw in the source-grid plan below.")}</p>}{fallback}</>}
   </div>
 }
