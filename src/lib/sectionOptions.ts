@@ -23,6 +23,11 @@ export type SectionSettings = {
   sectionStart?: number
   sectionEnd?: number
   sectionOnlyWithPoints?: boolean
+  reportJob?: string
+  reportClient?: string
+  reportSurveyor?: string
+  lowerToleranceMm?: number | null
+  upperToleranceMm?: number | null
 }
 
 export function assertSectionSettings(value: Record<string, unknown>) {
@@ -32,6 +37,9 @@ export function assertSectionSettings(value: Record<string, unknown>) {
   if (value.mapBasemap !== undefined && !["street", "aerial", "google", "none"].includes(String(value.mapBasemap))) throw new Error("Invalid saved section background.")
   if (value.mapOpacity !== undefined && (!Number.isFinite(value.mapOpacity) || Number(value.mapOpacity) < 0 || Number(value.mapOpacity) > 100)) throw new Error("Invalid saved map opacity.")
   for (const key of ["sectionInterval", "sectionHalfWidth", "sectionStart", "sectionEnd"]) if (value[key] !== undefined && (!Number.isFinite(value[key]) || (["sectionInterval", "sectionHalfWidth"].includes(key) && Number(value[key]) <= 0))) throw new Error("Invalid saved alignment section settings.")
+  for (const key of ["reportJob","reportClient","reportSurveyor"]) if (value[key] !== undefined && (typeof value[key] !== "string" || String(value[key]).length > 200)) throw new Error("Invalid report detail.")
+  for (const key of ["lowerToleranceMm","upperToleranceMm"]) if (value[key] !== undefined && value[key] !== null && !Number.isFinite(value[key])) throw new Error("Invalid signed conformance tolerance.")
+  if (value.lowerToleranceMm != null && value.upperToleranceMm != null && Number(value.lowerToleranceMm) > Number(value.upperToleranceMm)) throw new Error("Lower tolerance cannot exceed upper tolerance.")
   if (value.sectionOnlyWithPoints !== undefined && typeof value.sectionOnlyWithPoints !== "boolean") throw new Error("Invalid saved section point filter.")
   if (value.line !== null) {
     const line = value.line as SectionLine | undefined
@@ -48,6 +56,11 @@ export function initialSectionSettings(document: LandXmlDocument): SectionSettin
     asbuiltLayerName: allSectionPointFiles,
     corridor: 1,
     sectionOnlyWithPoints: false,
+    reportJob: "",
+    reportClient: "",
+    reportSurveyor: "",
+    lowerToleranceMm: null,
+    upperToleranceMm: null,
     line: null,
   }
 }
