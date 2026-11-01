@@ -17,19 +17,59 @@ export type SectionBook = {
   bottom: string
   reference: string
   crs: string
+  job?: string
+  client?: string
+  surveyor?: string
+  lowerToleranceMm?: number | null
+  upperToleranceMm?: number | null
 }
 const colours = ["#22a3b8", "#2563eb", "#9333ea", "#059669", "#db2777"]
+
+export function hasSectionConformanceCriteria(book: SectionBook) {
+  return book.lowerToleranceMm != null && book.upperToleranceMm != null
+}
+
+export function sectionPointStatus(book: SectionBook, differenceMm: number | null): "PASS" | "FAIL" | "NOT ASSESSED" {
+  if (!hasSectionConformanceCriteria(book) || differenceMm === null || !Number.isFinite(differenceMm)) return "NOT ASSESSED"
+  return differenceMm >= book.lowerToleranceMm! && differenceMm <= book.upperToleranceMm! ? "PASS" : "FAIL"
+}
+
+export function sectionConformanceSummary(book: SectionBook, sections = book.sections) {
+  const values = sections.flatMap((section) => section.sectionPoints.map((point) => point.differenceMm).filter((value): value is number => value !== null && Number.isFinite(value)))
+  const stats = values.reduce((acc, value) => ({ min: Math.min(acc.min, value), max: Math.max(acc.max, value), sum: acc.sum + value }), { min: Infinity, max: -Infinity, sum: 0 })
+  const statuses = sections.flatMap((section) => section.sectionPoints.map((point) => sectionPointStatus(book, point.differenceMm)))
+  return {
+    pass: statuses.filter((status) => status === "PASS").length,
+    fail: statuses.filter((status) => status === "FAIL").length,
+    unassessed: statuses.filter((status) => status === "NOT ASSESSED").length,
+    minimum: values.length ? stats.min : null,
+    maximum: values.length ? stats.max : null,
+    average: values.length ? stats.sum / values.length : null,
+    pointAppearances: statuses.length,
+  }
+}
+
+function validateSectionCriteria(book: SectionBook) {
+  const lower = book.lowerToleranceMm, upper = book.upperToleranceMm
+  if ((lower == null) !== (upper == null)) throw new Error("Enter both signed lower and upper tolerances, or leave both blank.")
+  if (lower != null && upper != null && (!Number.isFinite(lower) || !Number.isFinite(upper) || lower > upper)) {
+    throw new Error("Enter valid signed tolerances with the lower value no greater than the upper value.")
+  }
+}
+
 export function sectionBookCsv(book: SectionBook) {
+  validateSectionCriteria(book)
+  const summary = sectionConformanceSummary(book)
   return createReportCsv({
-    title: "Cross-section Book", project: book.document.projectName, createdAt: new Date().toISOString(),
-    metadata: [["Alignment", book.alignment || "Drawn section"], ["Interval", book.interval ?? null], ["File units", book.document.units], ["CRS (map selection)", book.crs || "Not declared"], ["Selected measured files", book.pointFiles.join("; ") || "None"], ["Top surface", book.top], ["Bottom surface", book.bottom || "None — thickness off"], ["Design reference", book.reference || "None"], ["Point search distance each side", book.corridor]],
-    summary: [["Sections", book.sections.length]],
-    columns: ["Section", "Chainage", "Type", "Source", "Point ID", `Distance from line start (${book.unitLabel})`, `Distance off line (${book.unitLabel})`, `Easting (${book.unitLabel})`, `Northing (${book.unitLabel})`, `RL (${book.unitLabel})`, `Design RL (${book.unitLabel})`, "Difference (mm)"],
+    title: hasSectionConformanceCriteria(book) ? "Cross-section Conformance Report" : "Cross-section Book", project: book.document.projectName, createdAt: new Date().toISOString(),
+    metadata: [["Alignment", book.alignment || "Drawn section"], ["Interval", book.interval ?? null], ["File units", book.document.units], ["CRS (map selection)", book.crs || "Not declared"], ["Selected measured files", book.pointFiles.join("; ") || "None"], ["Top surface", book.top], ["Bottom surface", book.bottom || "None — thickness off"], ["Design reference", book.reference || "None"], ["Point search distance each side", book.corridor], ["Job / contract", book.job || ""], ["Client", book.client || ""], ["Surveyor", book.surveyor || ""], ["Signed tolerance (mm)", hasSectionConformanceCriteria(book) ? `${book.lowerToleranceMm} to +${book.upperToleranceMm}`.replace("+-", "-") : "Not set"]],
+    summary: [["Sections", book.sections.length], ["Measured point appearances", summary.pointAppearances], ["Pass", hasSectionConformanceCriteria(book) ? summary.pass : null], ["Fail", hasSectionConformanceCriteria(book) ? summary.fail : null], ["Not assessed", summary.unassessed], ["Minimum difference (mm)", summary.minimum], ["Average difference (mm)", summary.average], ["Maximum difference (mm)", summary.maximum]],
+    columns: ["Section", "Chainage", "Type", "Source", "Point ID", `Distance from line start (${book.unitLabel})`, `Distance off line (${book.unitLabel})`, `Easting (${book.unitLabel})`, `Northing (${book.unitLabel})`, `RL (${book.unitLabel})`, `Design RL (${book.unitLabel})`, "Difference (mm)", ...(hasSectionConformanceCriteria(book) ? ["Status"] : [])],
     rows: book.sections.flatMap((section, i) => [
       ...section.samples.flatMap((sample) => book.surfaceIndices.map((index) => [i + 1, section.station?.chainage ?? null, "TIN sample", book.document.surfaces[index].name, "", sample.distance, null,
         section.line.start.easting + (section.line.end.easting - section.line.start.easting) * sample.distance / (section.length || 1),
-        section.line.start.northing + (section.line.end.northing - section.line.start.northing) * sample.distance / (section.length || 1), sample.values[index], null, null])),
-      ...section.sectionPoints.map((point) => [i + 1, section.station?.chainage ?? null, "Measured point", point.layerName, point.id, point.distance, point.offset, point.easting, point.northing, point.elevation, point.referenceLevel, point.differenceMm]),
+        section.line.start.northing + (section.line.end.northing - section.line.start.northing) * sample.distance / (section.length || 1), sample.values[index], null, null, ...(hasSectionConformanceCriteria(book) ? [""] : [])])),
+      ...section.sectionPoints.map((point) => [i + 1, section.station?.chainage ?? null, "Measured point", point.layerName, point.id, point.distance, point.offset, point.easting, point.northing, point.elevation, point.referenceLevel, point.differenceMm, ...(hasSectionConformanceCriteria(book) ? [sectionPointStatus(book, point.differenceMm)] : [])]),
     ]),
     notes: ["Source survey coordinates and measured RLs are retained. All files must share a grid, linear units and height datum. No vertical datum conversion is applied.", "Points within the selected distance either side of a section are projected onto it for display. Differences use design levels at the original measured X/Y. Blank levels are unassessed.", "Alignment sections use perpendiculars to the imported alignment's horizontal line, circular-curve and clothoid geometry at the requested chainages. Station equations and unsupported spirals require manual sections."],
   })
@@ -37,15 +77,22 @@ export function sectionBookCsv(book: SectionBook) {
 
 export async function createSectionBookPdf(book: SectionBook) {
   if (!book.sections.length) throw new Error("Create or draw a section first.")
+  validateSectionCriteria(book)
+  const conformance = hasSectionConformanceCriteria(book)
+  const overall = sectionConformanceSummary(book)
+  const title = conformance ? "Cross-section Conformance Report" : "Cross-section Book"
   const [{ jsPDF }, { autoTable }, font] = await Promise.all([import("jspdf"), import("jspdf-autotable"), reportFont()])
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", putOnlyUsedFonts: true })
   pdf.addFileToVFS("survey-report.ttf", font); pdf.addFont("survey-report.ttf", "SurveyReport", "normal"); pdf.setFont("SurveyReport")
-  pdf.setProperties({ title: "Cross-section Book", author: "SurveyTool.io", subject: book.document.projectName })
-  pdf.setTextColor(15, 23, 42); pdf.setFontSize(20); pdf.text("Cross-section Book", 14, 20)
+  pdf.setProperties({ title, author: "SurveyTool.io", subject: book.document.projectName })
+  pdf.setTextColor(15, 23, 42); pdf.setFontSize(20); pdf.text(title, 14, 20)
   pdf.setFontSize(10); pdf.text(pdf.splitTextToSize(book.document.projectName || "Survey project", 269), 14, 29)
   autoTable(pdf, { startY: 39, head: [["Project / section settings", "Value"]], body: [
-    ["Generated (UTC)", new Date().toISOString()], ["LandXML", book.document.fileName], ["Alignment", book.alignment || "No alignment — drawn section"], ["Sections", String(book.sections.length)],
+    ["Generated (UTC)", new Date().toISOString()], ["Job / contract", book.job || "Not specified"], ["Client", book.client || "Not specified"], ["Prepared by", book.surveyor || "Not specified"], ["LandXML", book.document.fileName], ["Alignment", book.alignment || "No alignment — drawn section"], ["Sections", String(book.sections.length)],
     ["Interval", book.interval ? `${book.interval} ${book.unitLabel}` : "Manually drawn"], ["Top / design surface", book.top], ["Bottom surface", book.bottom || "None — thickness check off"], ["Design reference for measured levels", book.reference || "None"],
+    ["Conformance criteria (measured − design)", conformance ? `${book.lowerToleranceMm} to ${book.upperToleranceMm} mm (inclusive)` : "Not set - profile only"],
+    ["Point status", conformance ? `PASS ${overall.pass} / FAIL ${overall.fail} / NOT ASSESSED ${overall.unassessed}` : "No tolerance assessment"],
+    ["Level differences (min / mean / max)", overall.minimum === null ? "No assessed design levels" : `${overall.minimum.toFixed(1)} / ${overall.average!.toFixed(1)} / ${overall.maximum!.toFixed(1)} mm`],
     ["Measured files", book.pointFiles.join("; ") || "None"], ["Point search distance each side", `${book.corridor} ${book.unitLabel}`], ["Source linear units", book.document.units], ["CRS (map selection)", book.crs || "Not declared"],
     ["Method", "TIN profiles sampled at 161 positions. Nearby measured points are projected onto each section without changing their RLs. Differences use the design level at the point's original X/Y. Missing design levels are unassessed. All files must already share the same horizontal grid, linear units and vertical datum."],
     ["Reading the sheets", "Each profile uses independently fitted horizontal and vertical scales. Point tables list up to 8 points per sheet; download the sections CSV for all samples and measured points. Background imagery is not included in the section sheets."],
@@ -59,7 +106,7 @@ export async function createSectionBookPdf(book: SectionBook) {
     pdf.setFontSize(8)
     pdf.text(`${book.alignment || "Drawn section"} · ${section.sectionPoints.length} measured points · search ±${book.corridor} ${book.unitLabel}`.slice(0, 180), 14, 25)
     pdf.text(`Start E ${section.line.start.easting.toFixed(3)}, N ${section.line.start.northing.toFixed(3)} · End E ${section.line.end.easting.toFixed(3)}, N ${section.line.end.northing.toFixed(3)}`, 14, 31)
-    const x = 28, y = 43, w = 253, h = 86, origin = section.station?.sectionDistance ?? 0
+    const x = 28, y = conformance ? 50 : 43, w = 253, h = conformance ? 79 : 86, origin = section.station?.sectionDistance ?? 0
     let min = Infinity, max = -Infinity
     section.samples.forEach((sample) => book.surfaceIndices.forEach((index) => { const v = sample.values[index]; if (v !== null && Number.isFinite(v)) { min = Math.min(min, v); max = Math.max(max, v) } }))
     section.sectionPoints.forEach((point) => { min = Math.min(min, point.elevation); max = Math.max(max, point.elevation) })
@@ -85,7 +132,7 @@ export async function createSectionBookPdf(book: SectionBook) {
       section.samples.forEach((sample) => { const value = sample.values[index]; if (value === null || !Number.isFinite(value)) { previous = null; return }; const next = { x: px(sample.distance), y: py(value) }; if (previous) pdf.line(previous.x, previous.y, next.x, next.y); previous = next })
     })
     const pointStep = Math.max(1, Math.ceil(section.sectionPoints.length / 1000))
-    section.sectionPoints.forEach((point, index) => { if (index % pointStep) return; pdf.setFillColor("#e87924"); pdf.setDrawColor("#ffffff"); pdf.circle(px(point.distance), py(point.elevation), 0.85, "FD") })
+    section.sectionPoints.forEach((point, index) => { if (index % pointStep) return; const status=sectionPointStatus(book,point.differenceMm);pdf.setFillColor(conformance && status==="PASS" ? "#16a34a" : conformance && status==="FAIL" ? "#dc2626" : "#e87924"); pdf.setDrawColor("#ffffff"); pdf.circle(px(point.distance), py(point.elevation), 0.85, "FD") })
     if (!hasLevels) { pdf.setTextColor(100, 116, 139); pdf.text("No design levels or measured points within this section.", x + w / 2, y + h / 2, { align: "center" }); pdf.setTextColor(15, 23, 42) }
     let legendX = 14
     pdf.setFontSize(7)
@@ -94,13 +141,14 @@ export async function createSectionBookPdf(book: SectionBook) {
       pdf.setDrawColor(colours[index % colours.length]); pdf.setLineWidth(0.6); pdf.line(legendX, 143, legendX + 5, 143)
       pdf.text(label, legendX + 7, 144); legendX += Math.min(74, pdf.getTextWidth(label) + 14)
     })
-    pdf.setFillColor("#e87924"); pdf.circle(legendX + 1, 143, 0.8, "F"); pdf.text(`Measured points${pointStep > 1 ? ` (1 in ${pointStep} plotted)` : ""}`, legendX + 4, 144)
+    pdf.setFillColor("#e87924"); pdf.circle(legendX + 1, 143, 0.8, "F"); pdf.text(`${conformance ? "Measured: green PASS / red FAIL / orange unassessed" : "Measured points"}${pointStep > 1 ? ` (1 in ${pointStep} plotted)` : ""}`, legendX + 4, 144)
     const thickness = calculateSectionThickness(section.samples, book.document.surfaces.findIndex((s) => s.name === book.top), book.document.surfaces.findIndex((s) => s.name === book.bottom), metresPerLinearUnit(book.document.units))
-    if (book.bottom) { pdf.setFontSize(7); pdf.text(thickness ? `Thickness (mm) · min ${thickness.minimum.toFixed(1)} · mean ${thickness.average.toFixed(1)} · max ${thickness.maximum.toFixed(1)}` : "Thickness unassessed: no common design levels.", 14, 37) }
+    if (conformance) { const summary=sectionConformanceSummary(book,[section]);pdf.setFontSize(8);pdf.text(`Conformance · PASS ${summary.pass}  FAIL ${summary.fail}  NOT ASSESSED ${summary.unassessed} · limits ${book.lowerToleranceMm} to ${book.upperToleranceMm} mm`, 14, 37) }
+    if (book.bottom) { pdf.setFontSize(7); pdf.text(thickness ? `Thickness (mm) · min ${thickness.minimum.toFixed(1)} · mean ${thickness.average.toFixed(1)} · max ${thickness.maximum.toFixed(1)}` : "Thickness unassessed: no common design levels.", 14, conformance ? 42 : 37) }
     if (section.sectionPoints.length) {
-      autoTable(pdf, { startY: 152, head: [["File / point", `Section x (${book.unitLabel})`, `Off line (${book.unitLabel})`, `Measured RL (${book.unitLabel})`, `Design RL (${book.unitLabel})`, "Difference (mm)"]], body: section.sectionPoints.slice(0, 8).map((p) => [
-        `${p.layerName} / ${p.id}`, (p.distance - origin).toFixed(3), p.offset.toFixed(3), p.elevation.toFixed(3), p.referenceLevel === null ? "—" : p.referenceLevel.toFixed(3), p.differenceMm === null ? "—" : p.differenceMm.toFixed(1),
-      ]), styles: { font: "SurveyReport", fontSize: 6.5, cellPadding: 1, overflow: "ellipsize" }, headStyles: { fontStyle: "normal", fillColor: [22, 78, 99] }, columnStyles: { 0: { cellWidth: 78 } }, margin: { left: 14, right: 14, bottom: 15 }, rowPageBreak: "avoid" })
+      autoTable(pdf, { startY: 152, head: [["File / point", `Section x (${book.unitLabel})`, `Off line (${book.unitLabel})`, `Measured RL (${book.unitLabel})`, `Design RL (${book.unitLabel})`, "Difference (mm)", ...(conformance ? ["Status"] : [])]], body: section.sectionPoints.slice(0, 8).map((p) => [
+        `${p.layerName} / ${p.id}`, (p.distance - origin).toFixed(3), p.offset.toFixed(3), p.elevation.toFixed(3), p.referenceLevel === null ? "—" : p.referenceLevel.toFixed(3), p.differenceMm === null ? "—" : p.differenceMm.toFixed(1), ...(conformance ? [sectionPointStatus(book,p.differenceMm)] : []),
+      ]), styles: { font: "SurveyReport", fontSize: 6.5, cellPadding: 1, overflow: "ellipsize" }, headStyles: { fontStyle: "normal", fillColor: [22, 78, 99] }, columnStyles: { 0: { cellWidth: conformance ? 65 : 78 } }, margin: { left: 14, right: 14, bottom: 15 }, rowPageBreak: "avoid" })
       if (section.sectionPoints.length > 8) pdf.text(`First 8 of ${section.sectionPoints.length} points listed. Sections CSV contains every point and design sample.`, 14, 197)
     } else pdf.text("No measured points within the selected search distance. Design profile shown where available.", 14, 157)
   }
