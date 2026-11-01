@@ -2,6 +2,7 @@ import type { LandXmlDocument } from "./landxml";
 import type { SurveyPointLayer } from "./surveyPoints";
 
 export const projectRoutes: Record<string, string> = {
+  terrain: "/tools/contours-to-terrain",
   asbuilt: "/tools/as-built-check",
   landxml: "/tools/landxml-viewer",
   surfaces: "/tools/surface-compare",
@@ -11,6 +12,7 @@ export const projectRoutes: Record<string, string> = {
   gis: "/tools/gis-export",
 };
 export const projectLabels: Record<string, string> = {
+  terrain: "Contours to 3D Terrain",
   asbuilt: "As-built vs Design",
   landxml: "LandXML Viewer",
   surfaces: "Surface Compare",
@@ -157,26 +159,44 @@ export function parseProjectFile(text: string) {
   return validateProject(JSON.parse(text));
 }
 async function database() {
+  if (typeof indexedDB === "undefined") throw new Error("Project storage is unavailable. Download a project file for backup.");
   return new Promise<IDBDatabase>((resolve, reject) => {
+    let blocked = false;
     const request = indexedDB.open("surveytool-workspaces", 1);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains("projects"))
         request.result.createObjectStore("projects", { keyPath: "id" });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      if (blocked) { request.result.close(); return; }
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () =>
       reject(request.error ?? new Error("Project storage is unavailable."));
-    request.onblocked = () =>
+    request.onblocked = () => {
+      blocked = true;
       reject(
         new Error("Close other SurveyTool tabs and retry project storage."),
       );
+    };
   });
 }
 export async function saveWorkspace(project: WorkspaceProject) {
+  validateProject(project);
+  if (new Blob([JSON.stringify(project)]).size > maximumProjectBytes)
+    throw new Error("This project exceeds 100 MB. Save a smaller selection of files.");
   const db = await database();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction("projects", "readwrite");
-    tx.objectStore("projects").put(project);
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction("projects", "readwrite");
+      tx.objectStore("projects").put(project);
+    } catch (error) {
+      db.close();
+      reject(error);
+      return;
+    }
     tx.oncomplete = () => {
       db.close();
       resolve();
@@ -184,13 +204,23 @@ export async function saveWorkspace(project: WorkspaceProject) {
     tx.onerror = () => {
       db.close();
       reject(
-        tx.error ??
+        tx.error?.name === "QuotaExceededError" ? new Error("Device storage is full. Download a project backup, then remove unneeded saved projects and retry.") : tx.error ??
           new Error(
             "Project could not be saved. Download a project file instead.",
           ),
       );
     };
     tx.onabort = tx.onerror;
+  });
+}
+
+export async function deleteWorkspace(id: string) {
+  const db = await database();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("projects", "readwrite");
+    tx.objectStore("projects").delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = tx.onabort = () => { db.close(); reject(tx.error ?? new Error("The saved project could not be removed.")); };
   });
 }
 export async function listWorkspaces(tool?: string) {

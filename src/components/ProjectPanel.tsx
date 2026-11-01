@@ -11,6 +11,7 @@ import {
 } from "../lib/projectWorkspace";
 import type { WorkspaceProject } from "../lib/projectWorkspace";
 import { downloadReportBlob, safeReportName } from "../lib/surveyReports";
+import { protectProjectStorage } from "../lib/offlineAccess";
 
 export default function ProjectPanel({
   tool,
@@ -64,7 +65,7 @@ export default function ProjectPanel({
       restore.current(project.state);
       setTitle(project.title);
       setId(project.id);
-      setMessage("Project opened. Run the check again to refresh results.");
+      setMessage("Project opened. Saved files and settings restored.");
     },
     [tool],
   );
@@ -103,11 +104,12 @@ export default function ProjectPanel({
     try {
       const project = snapshot();
       await saveWorkspace(project);
+      void protectProjectStorage();
       setId(project.id);
       setTitle(project.title);
       setProjects(await listWorkspaces(tool));
       setMessage(
-        "Saved on this device. Download a project file for a portable backup.",
+        "Saved on this device for offline use. Download a project file for a portable backup.",
       );
     } catch (error) {
       setMessage(
@@ -142,8 +144,9 @@ export default function ProjectPanel({
         Save / reopen project
       </summary>
       <p className="mt-3 text-xs leading-5 text-slate-400">
-        Files and settings are saved in this browser. Download a project file to
-        back up or move your work. Results are recalculated after reopening.
+        Files and settings are saved on this device and can be reopened offline
+        after the app is prepared. Download a project file to back up or move
+        your work. Results are recalculated after reopening.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <input

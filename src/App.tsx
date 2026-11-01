@@ -14,10 +14,13 @@ import Auth from "./pages/Auth"
 import Help from "./pages/Help"
 import HelpFeedbackButton from "./components/HelpFeedbackButton"
 import { AuthProvider } from "./context/AuthContext"
+import { OfflineNotice } from "./components/OfflineStatus"
+import VisitorAnalytics from "./components/VisitorAnalytics"
 
 const AsBuiltCheck = lazy(() => import("./pages/AsBuiltCheck"))
 const LocalProjects = lazy(() => import("./pages/LocalProjects"))
 const GisExporter = lazy(() => import("./pages/GisExporter"))
+const ContourTerrain = lazy(() => import("./pages/ContourTerrain"))
 
 function App() {
   return (
@@ -32,6 +35,7 @@ function App() {
           </div>
 
           <Routes>
+            <Route path="/tools/contours-to-terrain" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading terrain builder…</p>}><ContourTerrain /></Suspense>} />
             <Route path="/tools/as-built-check" element={<Suspense fallback={<p className="p-12">Loading design check…</p>}><AsBuiltCheck /></Suspense>} />
             <Route path="/projects" element={<Suspense fallback={<p className="p-12">Loading projects…</p>}><LocalProjects /></Suspense>} />
             <Route path="/help" element={<Help />} />
@@ -66,6 +70,8 @@ function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
           <HelpFeedbackButton />
+          <OfflineNotice />
+          <VisitorAnalytics />
         </main>
       </AuthProvider>
     </BrowserRouter>
