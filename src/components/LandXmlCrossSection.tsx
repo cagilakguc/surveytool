@@ -13,7 +13,7 @@ import type { SectionLine, SectionSample as Sample, SectionSettings, SectionThic
 import { createSectionAnalysis } from "../lib/sectionAnalysis"
 import type { SectionAnalysis, SectionSurveyPoint } from "../lib/sectionAnalysis"
 import { horizontalAlignment } from "../lib/alignmentGeometry"
-import { alignmentSectionRange, createAlignmentSections, maximumBatchSections } from "../lib/sectionBatch"
+import { alignmentSectionRange, createAlignmentSectionBatches, detectAsbuiltChainageRange, maximumAutomaticSections, maximumBatchSections } from "../lib/sectionBatch"
 import type { SectionBook } from "../lib/sectionReports"
 import SectionBookDownloads from "./SectionBookDownloads"
 import CrossSectionWorkspaceMap from "./CrossSectionWorkspaceMap"
@@ -127,23 +127,37 @@ export default function LandXmlCrossSection({ document, pointLayers, lineMarking
   const alignment = selectedAlignment
   const alignmentRange=useMemo(()=>alignment?alignmentSectionRange(alignment):null,[alignment])
   const interval=current.sectionInterval??10, halfWidth=current.sectionHalfWidth??20
+  const onlyWithPoints=current.sectionOnlyWithPoints??false
   const firstGridStation=alignmentRange?Math.ceil((alignmentRange.start-1e-8)/interval)*interval:0
   const defaultStart=alignmentRange?(firstGridStation<=alignmentRange.end?firstGridStation:alignmentRange.start):0
   const startStation=current.sectionStart??defaultStart
   const endStation=current.sectionEnd??(alignmentRange?Math.max(defaultStart,Math.floor((alignmentRange.end+1e-8)/interval)*interval):0)
   const [batch,setBatch]=useState<SectionAnalysis[]>([])
   const [batchBusy,setBatchBusy]=useState(false),[batchProgress,setBatchProgress]=useState(0),[batchError,setBatchError]=useState("")
+  const [detectionMessage,setDetectionMessage]=useState("")
+  useEffect(()=>setDetectionMessage(""),[alignment,activePointLayers,interval,halfWidth,corridor])
   const batchRun=useRef(0)
-  useEffect(()=>{batchRun.current++;setBatch([]);setBatchBusy(false);setBatchError("")},[analyseSection,alignment,interval,halfWidth,startStation,endStation,corridor,topSurfaceName,bottomSurfaceName])
+  useEffect(()=>{batchRun.current++;setBatch([]);setBatchBusy(false);setBatchError("")},[analyseSection,alignment,interval,halfWidth,startStation,endStation,corridor,topSurfaceName,bottomSurfaceName,onlyWithPoints])
   useEffect(()=>()=>{batchRun.current++},[])
   const batchLines=useMemo(()=>batch.map((section)=>section.line),[batch])
+  function detectSurveyRange() {
+    setDetectionMessage("");setBatchError("")
+    try {
+      if (!alignment) throw new Error("Select an alignment first.")
+      const points=activePointLayers.flatMap((layer)=>layer.points)
+      const detected=detectAsbuiltChainageRange(alignment,points,interval,halfWidth+corridor)
+      update({sectionStart:detected.start,sectionEnd:detected.end})
+      setDetectionMessage(`Matched ${detected.matched.toLocaleString()} of ${detected.total.toLocaleString()} points near ${alignmentName}. Survey CH ${formatChainage(detected.minimum)}–${formatChainage(detected.maximum)}; sections rounded to CH ${formatChainage(detected.start)}–${formatChainage(detected.end)}.`)
+    } catch (error) { setBatchError(error instanceof Error?error.message:"Could not detect the as-built chainages.") }
+  }
+
   async function generateSections() {
     if(!alignment)return
     const run=++batchRun.current
     setBatchBusy(true);setBatchProgress(0);setBatchError("");setBatch([])
     try{
       if(linearScale===null)throw new Error("The XML must declare supported linear units before generating interval sections.")
-      const lines=createAlignmentSections(alignment,interval,halfWidth,startStation,endStation)
+      const lines=createAlignmentSectionBatches(alignment,interval,halfWidth,startStation,endStation).flat()
       const sections:SectionAnalysis[]=[]
       let pointCount=0
       for(let index=0;index<lines.length;index++){
@@ -152,10 +166,10 @@ export default function LandXmlCrossSection({ document, pointLayers, lineMarking
         section.station={chainage:item.chainage,offset:0,distance:0,sectionDistance:halfWidth}
         pointCount+=section.sectionPoints.length
         if(pointCount>500000)throw new Error("This batch contains too many point appearances. Narrow the chainage range or point search distance, or choose fewer measured files.")
-        sections.push(section);setBatchProgress(Math.round((index+1)/lines.length*100))
+        if(!onlyWithPoints||section.sectionPoints.length>0)sections.push(section);setBatchProgress(Math.round((index+1)/lines.length*100))
         await new Promise<void>((resolve)=>window.setTimeout(resolve,0))
       }
-      if(run===batchRun.current)setBatch(sections)
+      if(run===batchRun.current){if(!sections.length)throw new Error("No measured points were found in these sections. Disable the measured-points-only filter or increase the point search distance.");setBatch(sections)}
     }catch(error){if(run===batchRun.current)setBatchError(error instanceof Error?error.message:"Sections could not be generated.")}
     finally{if(run===batchRun.current)setBatchBusy(false)}
   }
@@ -374,13 +388,18 @@ export default function LandXmlCrossSection({ document, pointLayers, lineMarking
         <h3 className="font-semibold text-cyan-100">Sections along the selected alignment</h3>
         <p className="text-sm leading-6 text-slate-400">Generate perpendicular cross sections at regular chainages. For irregular as-built locations or no alignment, use Draw section line on the map or drag a line in the source-grid plan.</p>
         {alignmentRange?.error&&<p role="alert" className="text-sm text-amber-200">{alignmentRange.error}</p>}
-        {alignmentRange?<p className="text-xs text-slate-400">{alignmentName} · chainage {alignmentRange.start.toFixed(3)}–{alignmentRange.end.toFixed(3)} {unitLabel}. Width is measured each side of the alignment. Up to {maximumBatchSections} sections per batch.</p>:<p className="text-sm text-amber-200">Select an alignment to generate interval sections. A drawn section works without one.</p>}
+        {alignmentRange?<p className="text-xs text-slate-400">{alignmentName} · chainage {alignmentRange.start.toFixed(3)}–{alignmentRange.end.toFixed(3)} {unitLabel}. Width is measured each side of the alignment. Up to {maximumAutomaticSections} sections per export, processed in groups of {maximumBatchSections}.</p>:<p className="text-sm text-amber-200">Select an alignment to generate interval sections. A drawn section works without one.</p>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <BatchNumber label={`Section interval (${unitLabel})`} value={interval} min={0.1} onChange={(value)=>update({sectionInterval:value})}/>
           <BatchNumber label={`Width each side (${unitLabel})`} value={halfWidth} min={0.1} onChange={(value)=>update({sectionHalfWidth:value})}/>
           <BatchNumber label={`Start chainage (${unitLabel})`} value={startStation} onChange={(value)=>update({sectionStart:value})}/>
           <BatchNumber label={`End chainage (${unitLabel})`} value={endStation} onChange={(value)=>update({sectionEnd:value})}/>
         </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" disabled={!alignment||Boolean(alignmentRange?.error)||!activePointLayers.length||batchBusy} onClick={detectSurveyRange} className="rounded-full border border-amber-300/50 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 disabled:opacity-40">Detect as-built chainage range</button>
+          <label className="inline-flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={onlyWithPoints} onChange={(event)=>update({sectionOnlyWithPoints:event.target.checked})} className="accent-cyan-400" />Only sections with as-built points</label>
+        </div>
+        {detectionMessage&&<p role="status" className="text-xs leading-5 text-emerald-200">{detectionMessage}</p>}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" disabled={!alignment||Boolean(alignmentRange?.error)||linearScale===null||batchBusy} onClick={()=>void generateSections()} className="rounded-full bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-40">{batchBusy?`Generating… ${batchProgress}%`:"Generate alignment sections"}</button>
           {batchBusy&&<button type="button" onClick={()=>{batchRun.current++;setBatchBusy(false)}} className="text-sm text-amber-200 underline">Cancel generation</button>}
