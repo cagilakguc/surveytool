@@ -60,7 +60,7 @@ export default function Navbar() {
           >
             LandXML Viewer
           </Link>
-          <Link className="transition hover:text-white" to="/tools/surface-compare">Surface Compare</Link>
+          <Link className="transition hover:text-white" to="/tools/contours-to-terrain">3D Terrain</Link>
           <Link className="transition hover:text-white" to="/projects">Projects</Link>
           <Link className="transition hover:text-white" to="/help">Help & Feedback</Link>
         </nav>
