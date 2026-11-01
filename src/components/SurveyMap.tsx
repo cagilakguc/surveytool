@@ -12,9 +12,10 @@ import Google from "ol/source/Google.js"
 import Draw from "ol/interaction/Draw.js"
 import Feature from "ol/Feature.js"
 import LineString from "ol/geom/LineString.js"
+import Point from "ol/geom/Point.js"
 import { extend } from "ol/extent.js"
 import { defaults as defaultControls, ScaleLine } from "ol/control.js"
-import { Fill, Stroke, Style, Circle as CircleStyle } from "ol/style.js"
+import { Fill, Stroke, Style, Text, Circle as CircleStyle } from "ol/style.js"
 import type { FeatureLike } from "ol/Feature.js"
 import type { LandXmlDocument } from "../lib/landxml"
 import type { SurfaceComparison } from "../lib/surfaceCompare"
@@ -23,6 +24,7 @@ import { buildSurveyMapData, mapCoordinateToSource, createMapTransform } from ".
 import { buildGisMapData } from "../lib/gisMapGeometry"
 import type { SurveyGeometryLayer } from "../lib/surveyGeometry"
 import type { SectionLine } from "../lib/sectionOptions"
+import { horizontalAlignment } from "../lib/alignmentGeometry"
 import "ol/ol.css"
 import "./SurveyMap.css"
 
@@ -54,6 +56,8 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
   const vectorRef = useRef<VectorLayer | null>(null)
   const backgroundRef = useRef<LayerGroup | null>(null)
   const sectionSourceRef = useRef<VectorSource | null>(null)
+  const stationSourceRef = useRef<VectorSource | null>(null)
+  const [showChainages, setShowChainages] = useState(true)
   const sectionDrawRef = useRef(onSectionDraw)
   sectionDrawRef.current = onSectionDraw
   const [drawActive, setDrawActive] = useState(false)
@@ -87,8 +91,20 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
       const background = new LayerGroup()
       const sections = new VectorSource()
       const sectionLayer = new VectorLayer({ source: sections, style: (feature) => new Style({ stroke: new Stroke({ color: feature.get("active") ? "#fb7185" : "#fbbf24", width: feature.get("active") ? 4 : 1.5, lineDash: feature.get("active") ? [10, 6] : undefined }) }) })
+      const stationSource = new VectorSource()
+      const stationLayer = new VectorLayer({
+        source: stationSource,
+        declutter: true,
+        style: (feature, resolution) => {
+          if (!showChainages || resolution > 4 && !feature.get("major") || resolution > 35) return undefined
+          return new Style({
+            image: new CircleStyle({ radius: 2.5, fill: new Fill({ color: "#facc15" }), stroke: new Stroke({ color: "#0f172a", width: 1 }) }),
+            text: new Text({ text: String(feature.get("label")), offsetY: -13, font: "bold 11px sans-serif", fill: new Fill({ color: "#ffffff" }), stroke: new Stroke({ color: "#0f172a", width: 4 }), padding: [2, 3, 2, 3] }),
+          })
+        },
+      })
       const map = new Map({
-        target: target.current, layers: [background, vector, sectionLayer],
+        target: target.current, layers: [background, vector, sectionLayer, stationLayer],
         controls: defaultControls({ attributionOptions: { collapsible: false } }).extend([new ScaleLine()]),
         view: new View({ projection: "EPSG:3857", center: [0, 0], zoom: 2, minZoom: 1, maxZoom: 24 }),
       })
@@ -96,6 +112,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
       vectorRef.current = vector
       backgroundRef.current = background
       sectionSourceRef.current = sections
+      stationSourceRef.current = stationSource
       map.on("pointermove", (event) => {
         if (event.dragging) return
         const feature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate, { hitTolerance: 3 })
@@ -113,11 +130,12 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
         vectorRef.current = null
         backgroundRef.current = null
         sectionSourceRef.current = null
+        stationSourceRef.current = null
       }
     } catch {
       setInitialisationError("The interactive map could not start in this browser. Use the plan view or try another browser.")
     }
-  }, [canRender, isComparison])
+  }, [canRender, isComparison, showChainages])
 
   useEffect(() => {
     if (!data.value || !mapRef.current) return
@@ -129,6 +147,34 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     setHover(null)
     mapRef.current.getView().fit(data.value.extent, { padding: [45, 45, 45, 45], maxZoom: 20, duration: 0 })
   }, [data])
+
+  useEffect(() => {
+    const source = stationSourceRef.current
+    if (!source) return
+    source.clear()
+    if (!document || !showChainages) return
+    try {
+      const project = createMapTransform(crs)
+      for (const alignment of document.alignments) {
+        const range = horizontalAlignment(alignment)
+        const first = Math.ceil((range.start - 1e-7) / 10) * 10
+        for (let chainage = first; chainage <= range.end + 1e-7; chainage += 10) {
+          const position = range.at(Math.min(range.length, Math.max(0, chainage - range.start)))
+          const label = `${Math.floor(chainage / 1000)}+${(chainage % 1000).toFixed(0).padStart(3, "0")}`
+          source.addFeature(new Feature({
+            geometry: new Point(project(position.easting, position.northing)),
+            name: `${alignment.name} · CH ${label}`,
+            label: `CH ${label}`,
+            major: Math.round(chainage) % 100 === 0,
+            easting: position.easting,
+            northing: position.northing,
+          }))
+        }
+      }
+    } catch {
+      // Unsupported alignments remain visible without generated station markers.
+    }
+  }, [document, crs, showChainages, canRender])
 
   useEffect(() => { vectorRef.current?.setOpacity(opacity / 100) }, [opacity, data])
 
@@ -210,6 +256,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     <div className="survey-map overflow-hidden rounded-3xl border border-white/10 bg-slate-950">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <p className="min-w-0 text-xs text-slate-300"><strong className="text-white">{comparison ? "Surface difference" : "Survey map"}</strong> · {crs.code} · {basemap === "google" ? "Google satellite" : basemap === "aerial" ? "Aerial / satellite" : basemap === "street" ? "Street map" : "No background"}</p>
+        {onSectionDraw&&document?.alignments.length ? <label className="inline-flex items-center gap-2 text-xs text-amber-200"><input type="checkbox" checked={showChainages} onChange={(event)=>setShowChainages(event.target.checked)} className="accent-amber-400" />Show chainages</label> : null}
         {onSectionDraw&&<button type="button" onClick={()=>{setDrawActive((value)=>!value);setDrawError("")}} className="rounded-full border border-rose-300/40 bg-rose-300/10 px-3 py-1.5 text-xs font-semibold text-rose-100">{drawActive?"Cancel drawing":"Draw section line"}</button>}
         <button type="button" onClick={() => data.value && mapRef.current?.getView().fit(data.value.extent, { padding: [45, 45, 45, 45], maxZoom: 20, duration: 200 })} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"><Maximize2 size={14} />{geometry ? "Fit to points" : "Fit to surface"}</button>
       </div>
