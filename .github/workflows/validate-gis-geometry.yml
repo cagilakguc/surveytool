@@ -28,6 +28,7 @@ jobs:
       - run: npm run test:offline
       - run: npm run test:viewer
       - run: npm run test:usage
+      - run: npm run test:gis-columns
       - run: npm run lint
       - run: npm install --no-save --package-lock=false sql.js@1.14.1 tsx@4.23.15
       - run: node --import tsx scripts/validate-dxf-geometry.mjs

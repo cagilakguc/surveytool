@@ -19,7 +19,8 @@
     "test:terrain": "node --import tsx scripts/validate-terrain.mjs",
     "test:offline": "node --import tsx scripts/validate-offline.mjs",
     "test:viewer": "node --import tsx scripts/validate-landxml-display.mjs",
-    "test:usage": "node --import tsx scripts/validate-tool-usage.mjs"
+    "test:usage": "node --import tsx scripts/validate-tool-usage.mjs",
+    "test:gis-columns": "node --import tsx scripts/validate-gis-columns.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
