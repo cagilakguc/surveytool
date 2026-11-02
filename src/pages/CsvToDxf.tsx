@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { Link } from "react-router-dom"
@@ -487,6 +488,7 @@ export default function CsvToDxf() {
     document.body.appendChild(link)
     link.click()
     link.remove()
+    trackToolAction("csv_dxf", "export_prepared", { format: "dxf" })
 
     window.setTimeout(() => {
       URL.revokeObjectURL(url)

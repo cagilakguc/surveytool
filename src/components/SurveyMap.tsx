@@ -24,25 +24,26 @@ import { buildSurveyMapData, mapCoordinateToSource, createMapTransform } from ".
 import { buildGisMapData } from "../lib/gisMapGeometry"
 import type { SurveyGeometryLayer } from "../lib/surveyGeometry"
 import type { SectionLine } from "../lib/sectionOptions"
+import { createTinSampler } from "../lib/asBuiltConformance"
 import { horizontalAlignment } from "../lib/alignmentGeometry"
 import "ol/ol.css"
 import "./SurveyMap.css"
 
-type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string }
+type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string; fullDetail?: boolean }
 type Hover = { name: string; easting?: number; northing?: number; elevation?: number; difference?: number; coordinateLabel?: string }
 
-function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>) {
+function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>, edges = false) {
   const group = feature.get("group") as string
   const colour = feature.get("colour") as string ?? "#22d3ee"
   const difference = feature.get("difference") as number | undefined
   const intensity = feature.get("intensity") as number ?? 0
-  const key = difference === undefined ? `${group}-${feature.getGeometry()?.getType()}` : `${difference < 0 ? "cut" : "fill"}-${intensity}`
+  const key = difference === undefined ? `${group}-${feature.getGeometry()?.getType()}-${feature.get("surfaceBand") ?? ""}-${edges}` : `${difference < 0 ? "cut" : "fill"}-${intensity}`
   let style = cache.get(key)
   if (!style) {
-    const fill = difference === undefined ? `${colour}35` : `rgba(${difference < 0 ? "251,113,133" : "34,211,238"},${0.25 + intensity / 30 * 0.75})`
+    const fill = feature.get("completeSurface") ? colour : difference === undefined ? `${colour}35` : `rgba(${difference < 0 ? "251,113,133" : "34,211,238"},${0.25 + intensity / 30 * 0.75})`
     style = new Style({
       fill: new Fill({ color: fill }),
-      stroke: new Stroke({ color: difference === undefined ? colour : fill, width: group === "alignments" || group === "gis-lines" ? 3 : 1 }),
+      stroke: feature.get("completeSurface") && !edges ? undefined : new Stroke({ color: feature.get("completeSurface") ? "#10203099" : difference === undefined ? colour : fill, width: feature.get("completeSurface") ? 0.65 : group === "alignments" || group === "gis-lines" ? 3 : 1 }),
       image: new CircleStyle({ radius: 4, fill: new Fill({ color: colour }), stroke: new Stroke({ color: "#07111f", width: 1.5 }) }),
     })
     cache.set(key, style)
@@ -50,7 +51,15 @@ function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>
   return style
 }
 
-export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName }: SurveyMapProps) {
+export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName, fullDetail = false }: SurveyMapProps) {
+  const [showTinEdges, setShowTinEdges] = useState(false)
+  const edgesRef = useRef(false)
+  edgesRef.current = showTinEdges
+  const crsRef = useRef(crs)
+  crsRef.current = crs
+  const samplers = useMemo(() => fullDetail ? document?.surfaces.map(surface => { try { return createTinSampler(surface) } catch { return null } }) ?? [] : [], [document, fullDetail])
+  const samplersRef = useRef(samplers)
+  samplersRef.current = samplers
   const target = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const vectorRef = useRef<VectorLayer | null>(null)
@@ -73,13 +82,13 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
   const data = useMemo(() => {
     try {
       const points = geometry?.points.length || geometry?.lines.length || geometry?.polygons.length ? buildGisMapData(crs, geometry) : null
-      const surfaces = document || comparison ? buildSurveyMapData(crs, document, comparison) : null
+      const surfaces = document || comparison ? buildSurveyMapData(crs, document, comparison, fullDetail) : null
       if (surfaces && points) return { value: { features: [...surfaces.features, ...points.features], extent: extend(surfaces.extent.slice(), points.extent), groups: [...surfaces.groups, ...points.groups], note: [surfaces.note, points.note.replace("Export retains every feature and vertex.", "Calculations and reports retain every measured point.")].filter(Boolean).join(" ") }, error: "" }
       if (points || surfaces) return { value: points ?? surfaces, error: "" }
       throw new Error("There is no survey geometry to display.")
     }
     catch (error) { return { value: null, error: error instanceof Error ? error.message : "This coordinate system could not be used for the map." } }
-  }, [crs, document, comparison, geometry])
+  }, [crs, document, comparison, geometry, fullDetail])
   const canRender = data.value !== null
   const isComparison = comparison !== undefined
 
@@ -87,7 +96,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     if (!target.current || !canRender) return
     try {
       const cache = new globalThis.Map<string, Style>()
-      const vector = new VectorLayer({ source: new VectorSource(), style: (feature) => hiddenGroups.current.has(feature.get("group")) ? undefined : featureStyle(feature, cache) })
+      const vector = new VectorLayer({ source: new VectorSource(), style: (feature) => hiddenGroups.current.has(feature.get("group")) ? undefined : featureStyle(feature, cache, edgesRef.current) })
       const background = new LayerGroup()
       const sections = new VectorSource()
       const sectionLayer = new VectorLayer({ source: sections, style: (feature) => new Style({ stroke: new Stroke({ color: feature.get("active") ? "#fb7185" : "#fbbf24", width: feature.get("active") ? 4 : 1.5, lineDash: feature.get("active") ? [10, 6] : undefined }) }) })
@@ -116,7 +125,14 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
       map.on("pointermove", (event) => {
         if (event.dragging) return
         const feature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate, { hitTolerance: 3 })
-        setHover(feature ? { name: feature.get("name") ?? "Survey geometry", easting: feature.get("easting"), northing: feature.get("northing"), elevation: feature.get("elevation"), difference: feature.get("difference"), coordinateLabel: feature.get("coordinateLabel") ?? (isComparison ? "Cell centre" : "Point") } : null)
+        if (feature?.get("completeSurface")) {
+          try {
+            const point = mapCoordinateToSource(crsRef.current, event.coordinate)
+            const index = Number(String(feature.get("group")).replace("surface-", ""))
+            const found = samplersRef.current[index]?.find(point.easting, point.northing)
+            setHover({ name: feature.get("name"), easting: point.easting, northing: point.northing, elevation: found?.level ?? undefined, coordinateLabel: "Cursor" })
+          } catch { setHover(null) }
+        } else setHover(feature ? { name: feature.get("name") ?? "Survey geometry", easting: feature.get("easting"), northing: feature.get("northing"), elevation: feature.get("elevation"), difference: feature.get("difference"), coordinateLabel: feature.get("coordinateLabel") ?? (isComparison ? "Cell centre" : "Point") } : null)
         if (target.current) target.current.style.cursor = drawActiveRef.current || feature ? "crosshair" : "grab"
       })
       const observer = new ResizeObserver(() => map.updateSize())
@@ -256,6 +272,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     <div className="survey-map overflow-hidden rounded-3xl border border-white/10 bg-slate-950">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <p className="min-w-0 text-xs text-slate-300"><strong className="text-white">{comparison ? "Surface difference" : "Survey map"}</strong> · {crs.code} · {basemap === "google" ? "Google satellite" : basemap === "aerial" ? "Aerial / satellite" : basemap === "street" ? "Street map" : "No background"}</p>
+        {fullDetail && <label className="inline-flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={showTinEdges} onChange={event => { setShowTinEdges(event.target.checked); edgesRef.current = event.target.checked; vectorRef.current?.changed() }} />TIN edges</label>}
         {onSectionDraw&&document?.alignments.length ? <label className="inline-flex items-center gap-2 text-xs text-amber-200"><input type="checkbox" checked={showChainages} onChange={(event)=>setShowChainages(event.target.checked)} className="accent-amber-400" />Show chainages</label> : null}
         {onSectionDraw&&<button type="button" onClick={()=>{setDrawActive((value)=>!value);setDrawError("")}} className="rounded-full border border-rose-300/40 bg-rose-300/10 px-3 py-1.5 text-xs font-semibold text-rose-100">{drawActive?"Cancel drawing":"Draw section line"}</button>}
         <button type="button" onClick={() => data.value && mapRef.current?.getView().fit(data.value.extent, { padding: [45, 45, 45, 45], maxZoom: 20, duration: 200 })} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"><Maximize2 size={14} />{geometry ? "Fit to points" : "Fit to surface"}</button>

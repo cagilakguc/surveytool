@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import ProjectPanel from "../components/ProjectPanel"
 import ReportDownloads from "../components/ReportDownloads"
 import type { SurveyReport } from "../lib/surveyReports"
@@ -258,6 +259,7 @@ export default function SurfaceCompare() {
         setDesign(parsed)
         setDesignIndex(0)
       }
+      trackToolAction("surface_compare", "import_complete", { source: "upload", format: "xml" })
     } catch (caughtError) {
       if (
         caughtError instanceof DOMException &&

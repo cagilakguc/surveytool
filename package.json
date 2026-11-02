@@ -17,7 +17,9 @@
     "test:sections": "node --import tsx scripts/validate-sections.mjs",
     "postbuild": "node scripts/generate-service-worker.mjs",
     "test:terrain": "node --import tsx scripts/validate-terrain.mjs",
-    "test:offline": "node --import tsx scripts/validate-offline.mjs"
+    "test:offline": "node --import tsx scripts/validate-offline.mjs",
+    "test:viewer": "node --import tsx scripts/validate-landxml-display.mjs",
+    "test:usage": "node --import tsx scripts/validate-tool-usage.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import PageSeo from "../components/PageSeo";
@@ -390,6 +391,7 @@ export default function AsBuiltCheck() {
         worker.current = null;
         if (data.type === "result") {
           setResult(data.result);
+          trackToolAction("asbuilt", "calculate_complete");
           setCalculatedAt(new Date().toISOString());
           setPage(0);
         } else setMessage(data.message);

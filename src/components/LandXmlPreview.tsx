@@ -15,6 +15,8 @@ import {
   Plus,
 } from "lucide-react"
 
+import LandXmlSurfaceCanvas from "./LandXmlSurfaceCanvas"
+
 import type {
   LandXmlDocument,
   LandXmlSurface,
@@ -71,18 +73,9 @@ type PanState = {
   viewBox: ViewBox
 }
 
-const surfaceColours = [
-  "#22d3ee",
-  "#60a5fa",
-  "#a78bfa",
-  "#34d399",
-  "#f472b6",
-]
-
 const previewWidth = 1000
 const previewHeight = 620
 const previewPadding = 34
-const maximumPreviewFaces = 3500
 const fitViewBox: ViewBox = {
   x: 0,
   y: 0,
@@ -375,6 +368,8 @@ export default function LandXmlPreview({
   const [selectedSurface, setSelectedSurface] = useState("all")
   const [showSurfaces, setShowSurfaces] = useState(true)
   const [showVertices, setShowVertices] = useState(false)
+  const [showEdges, setShowEdges] = useState(false)
+  const [elevationColours, setElevationColours] = useState(true)
   const [showAlignments, setShowAlignments] = useState(true)
   const [showCogoPoints, setShowCogoPoints] = useState(true)
   const [viewBox, setViewBox] = useState<ViewBox>(fitViewBox)
@@ -453,10 +448,6 @@ export default function LandXmlPreview({
   const totalFaces = visibleSurfaces.reduce(
     (sum, surface) => sum + surface.faces.length,
     0,
-  )
-  const faceStep = Math.max(
-    1,
-    Math.ceil(totalFaces / maximumPreviewFaces),
   )
   const zoomPercent = Math.round(
     (previewWidth / viewBox.width) * 100,
@@ -666,6 +657,8 @@ export default function LandXmlPreview({
           checked={showVertices}
           onChange={setShowVertices}
         />
+        <LayerToggle label="TIN edges" checked={showEdges} onChange={setShowEdges} />
+        <LayerToggle label="Elevation colours" checked={elevationColours} onChange={setElevationColours} />
         <LayerToggle
           label="Alignments"
           checked={showAlignments}
@@ -708,6 +701,7 @@ export default function LandXmlPreview({
               </ToolButton>
             </div>
 
+            <LandXmlSurfaceCanvas surfaces={visibleSurfaces} projection={projection} viewBox={viewBox} showFaces={showSurfaces} showVertices={showVertices} edges={showEdges} elevation={elevationColours} />
             <svg
               ref={svgRef}
               viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
@@ -752,112 +746,6 @@ export default function LandXmlPreview({
                 height={viewBox.height}
                 fill="url(#landxml-grid)"
               />
-
-              {showSurfaces &&
-                visibleSurfaces.map((surface, surfaceIndex) => {
-                  const colour =
-                    surfaceColours[
-                      surfaceIndex % surfaceColours.length
-                    ]
-                  const elevationRange = Math.max(
-                    (surface.maxElevation ?? 0) -
-                      (surface.minElevation ?? 0),
-                    0.001,
-                  )
-
-                  return (
-                    <g key={surface.name}>
-                      {surface.faces
-                        .filter(
-                          (_, faceIndex) =>
-                            faceIndex % faceStep === 0,
-                        )
-                        .map((face, faceIndex) => {
-                          const facePoints = face
-                            .map((id) => surface.points[id])
-                            .filter(
-                              (point): point is PlanPoint =>
-                                point !== undefined,
-                            )
-
-                          if (facePoints.length !== 3) {
-                            return null
-                          }
-
-                          const averageElevation =
-                            facePoints.reduce(
-                              (sum, point) =>
-                                sum + (point.elevation ?? 0),
-                              0,
-                            ) / 3
-                          const elevationRatio =
-                            surface.minElevation === null
-                              ? 0.5
-                              : (averageElevation -
-                                  surface.minElevation) /
-                                elevationRange
-
-                          return (
-                            <polygon
-                              key={`${surface.name}-${faceIndex}`}
-                              points={facePoints
-                                .map((point) => {
-                                  const projected =
-                                    projection.project(point)
-                                  return `${projected.x},${projected.y}`
-                                })
-                                .join(" ")}
-                              fill={colour}
-                              fillOpacity={
-                                0.16 + elevationRatio * 0.28
-                              }
-                              stroke={colour}
-                              strokeOpacity="0.5"
-                              strokeWidth="0.7"
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          )
-                        })}
-                    </g>
-                  )
-                })}
-
-              {showVertices &&
-                visibleSurfaces.map((surface, surfaceIndex) => {
-                  const colour =
-                    surfaceColours[
-                      surfaceIndex % surfaceColours.length
-                    ]
-                  const points = getSurfacePoints(surface)
-                  const pointStep = Math.max(
-                    1,
-                    Math.ceil(points.length / 5000),
-                  )
-
-                  return (
-                    <g key={`${surface.name}-vertices`}>
-                      {points
-                        .filter(
-                          (_, pointIndex) =>
-                            pointIndex % pointStep === 0,
-                        )
-                        .map((point, pointIndex) => {
-                          const projected =
-                            projection.project(point)
-                          return (
-                            <circle
-                              key={`${surface.name}-point-${pointIndex}`}
-                              cx={projected.x}
-                              cy={projected.y}
-                              r="1.8"
-                              fill={colour}
-                              fillOpacity="0.9"
-                            />
-                          )
-                        })}
-                    </g>
-                  )
-                })}
 
               {showAlignments &&
                 document.alignments.map((alignment) => (
@@ -974,12 +862,8 @@ export default function LandXmlPreview({
         </div>
       )}
 
-      {faceStep > 1 && (
-        <p className="mt-3 text-xs text-amber-300">
-          Preview simplified to every {faceStep}th face for smooth
-          performance. Hover RL still uses the complete TIN.
-        </p>
-      )}
+      <p className="mt-3 text-xs text-slate-400">Complete surface · {totalFaces.toLocaleString()} source triangles · sharp rendering at every zoom level.</p>
+      {elevationColours && visibleSurfaces.filter(surface => surface.minElevation !== null && surface.maxElevation !== null).map((surface, i) => <div key={surface.name + i} className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400"><span>{surface.name}</span><span>{surface.minElevation?.toFixed(3)}</span><span className="h-2 w-32 rounded-full bg-gradient-to-r from-blue-600 via-cyan-400 to-amber-400" /><span>{surface.maxElevation?.toFixed(3)} {document.units}</span></div>)}
     </section>
   )
 }

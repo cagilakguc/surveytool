@@ -4,7 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { TerrainMesh } from "../lib/contourTerrain";
 import CanvasTerrainView from "./CanvasTerrainView";
 
-export default function TerrainViewer({ mesh }: { mesh: TerrainMesh }) {
+export default function TerrainViewer({ mesh, smooth = false, label = "Interactive 3D contour terrain; drag to rotate, use two fingers or the wheel to zoom", caption = "Exports always retain true elevations.", fallbackFaceLimit = Infinity }: { mesh: TerrainMesh; smooth?: boolean; label?: string; caption?: string; fallbackFaceLimit?: number }) {
   const host = useRef<HTMLDivElement>(null);
   const [exaggeration, setExaggeration] = useState(1),
     [wireframe, setWireframe] = useState(false),
@@ -71,7 +71,7 @@ export default function TerrainViewer({ mesh }: { mesh: TerrainMesh }) {
         vertexColors: true,
         side: THREE.DoubleSide,
         roughness: 0.86,
-        flatShading: true,
+        flatShading: !smooth,
       }),
       surface = new THREE.Mesh(geometry, material);
     scene.add(surface);
@@ -108,7 +108,7 @@ export default function TerrainViewer({ mesh }: { mesh: TerrainMesh }) {
     renderer.setClearColor(0x091523, 1);
     renderer.domElement.setAttribute(
       "aria-label",
-      "Interactive 3D contour terrain; drag to rotate, use two fingers or the wheel to zoom",
+      label,
     );
     renderer.domElement.setAttribute("role", "img");
     element.appendChild(renderer.domElement);
@@ -145,7 +145,7 @@ export default function TerrainViewer({ mesh }: { mesh: TerrainMesh }) {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [mesh, exaggeration, wireframe, reset, fallback]);
+  }, [mesh, exaggeration, wireframe, reset, fallback, smooth, label]);
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-xs text-slate-300">
@@ -183,7 +183,7 @@ export default function TerrainViewer({ mesh }: { mesh: TerrainMesh }) {
         </div>
       </div>
       <div ref={host} className="h-[380px] w-full touch-none sm:h-[480px]">
-        {fallback && (
+        {fallback && mesh.faces.length > fallbackFaceLimit ? <div role="status" className="flex h-full items-center justify-center p-8 text-center text-sm text-amber-200">This browser cannot use hardware 3D. Use the full-detail plan or map for this large surface, or open 3D in a browser with WebGL enabled.</div> : fallback && (
           <CanvasTerrainView
             key={reset}
             mesh={mesh}
@@ -196,7 +196,7 @@ export default function TerrainViewer({ mesh }: { mesh: TerrainMesh }) {
         <span>{mesh.minZ.toFixed(3)}</span>
         <span className="h-2 w-32 rounded-full bg-gradient-to-r from-cyan-500 to-lime-400" />
         <span>{mesh.maxZ.toFixed(3)}</span>
-        <span className="ml-auto">Exports always retain true elevations.</span>
+        <span className="ml-auto">{caption}</span>
       </div>
     </div>
   );

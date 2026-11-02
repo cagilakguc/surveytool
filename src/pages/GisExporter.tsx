@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import ProjectPanel from "../components/ProjectPanel"
 import { assertGeometryLayer, record } from "../lib/projectWorkspace"
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
@@ -257,6 +258,7 @@ export default function GisExporter() {
           `${baseName}-${crsName}.gpkg`,
         ))
       }
+      trackToolAction("gis", "export_prepared", { format: format === "SHAPEFILE" ? "shapefile" : "geopackage" })
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
