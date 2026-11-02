@@ -15,6 +15,8 @@ import {
 
 import PageSeo from "../components/PageSeo"
 import CrsPicker from "../components/CrsPicker"
+import GisColumnMapper from "../components/GisColumnMapper"
+import { readGisPointTable, mapGisPointTable, type GisPointTable, type GisColumnMapping } from "../lib/gisColumnMapping"
 import { isGeographicCrs, loadCrsCatalogue } from "../lib/mapCoordinates"
 import type { MapCrs, Basemap } from "../lib/mapCoordinates"
 import { loadGisCrsDefinition } from "../lib/gisCrs"
@@ -146,6 +148,9 @@ export default function GisExporter() {
   }, [catalogueAttempt])
   const [geometryLayer, setGeometryLayer] =
     useState<SurveyGeometryLayer | null>(null)
+  const [pointTable, setPointTable] = useState<GisPointTable | null>(null)
+  const [columnMapping, setColumnMapping] = useState<GisColumnMapping>({ easting: null, northing: null, elevation: null, id: null, code: null })
+  const [hasColumnHeader, setHasColumnHeader] = useState(false)
   const [isReading, setIsReading] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState("")
@@ -184,7 +189,8 @@ export default function GisExporter() {
     await readSurveyFile(file)
   }
 
-  async function readSurveyFile(file: File) {
+  async function readSurveyFile(file: File, source: "upload" | "demo" = "upload") {
+    setPointTable(null)
     if (file.size > maximumFileSize) {
       setGeometryLayer(null)
       setError("Please choose a survey file smaller than 50 MB.")
@@ -195,7 +201,16 @@ export default function GisExporter() {
     setError("")
     setGeometryLayer(null)
     try {
-      setGeometryLayer(await parseSurveyGeometryFile(file))
+      const extension = file.name.toLowerCase().split(".").pop()
+      if (extension === "csv" || extension === "txt") {
+        const table = readGisPointTable(await file.text(), file.name)
+        setPointTable(table)
+        setColumnMapping(table.suggested)
+        setHasColumnHeader(table.hasHeader)
+      } else {
+        setGeometryLayer(await parseSurveyGeometryFile(file))
+        trackToolAction("gis", source === "demo" ? "demo_open" : "import_complete", { source, format: "dxf" })
+      }
     } catch (caughtError) {
       setGeometryLayer(null)
       setError(
@@ -205,6 +220,30 @@ export default function GisExporter() {
       )
     } finally {
       setIsReading(false)
+    }
+  }
+
+  function updateColumnMapping(mapping: GisColumnMapping) {
+    setColumnMapping(mapping)
+    setGeometryLayer(null)
+    setError("")
+  }
+
+  function updateColumnHeader(value: boolean) {
+    setHasColumnHeader(value)
+    setGeometryLayer(null)
+    setError("")
+  }
+
+  function applyColumnMapping() {
+    if (!pointTable) return
+    try {
+      setGeometryLayer(mapGisPointTable(pointTable, columnMapping, hasColumnHeader))
+      setError("")
+      trackToolAction("gis", "import_complete", { source: "upload", format: pointTable.format === "CSV" ? "csv" : "txt" })
+    } catch (error) {
+      setGeometryLayer(null)
+      setError(error instanceof Error ? error.message : "Check the selected point columns.")
     }
   }
 
@@ -218,7 +257,7 @@ export default function GisExporter() {
       const file = new File([await response.text()], "SurveyTool-GIS-demo.dxf", { type: "application/dxf" })
       setSourceCrs("EPSG:2193")
       setTargetCrs("EPSG:2193")
-      await readSurveyFile(file)
+      await readSurveyFile(file, "demo")
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "The demo could not be opened.")
     } finally {
@@ -290,7 +329,7 @@ export default function GisExporter() {
           if(state.geometryLayer!==null)assertGeometryLayer(state.geometryLayer)
           const prefs=record(state.preferences)
           for(const key of ["source","target"])if(typeof prefs[key]!=="string"||!/^$|^EPSG:\d{4,6}$/.test(prefs[key] as string))throw new Error("Invalid saved CRS.")
-          setGeometryLayer(state.geometryLayer as SurveyGeometryLayer|null);setPreferences(readGisPreferences({getItem:()=>JSON.stringify(prefs)}));setError("");setPreparedDownload(null)
+          setPointTable(null);setGeometryLayer(state.geometryLayer as SurveyGeometryLayer|null);setPreferences(readGisPreferences({getItem:()=>JSON.stringify(prefs)}));setError("");setPreparedDownload(null)
         }}/>
 
         <Link
@@ -352,13 +391,15 @@ export default function GisExporter() {
           </div>
 
           <p className="mt-4 text-sm text-slate-500">
-            CSV and TXT create points. ASCII DXF retains POINT, INSERT, LINE,
+            CSV and TXT create points after you choose their coordinate columns. ASCII DXF retains POINT, INSERT, LINE,
             LWPOLYLINE and POLYLINE/VERTEX geometry. Closed polylines become polygons.
             Z values, height units and the vertical datum are preserved. Only X/Y coordinates are reprojected.
           </p>
         </section>
 
         <p className="mt-3 text-xs text-slate-500">{storageFailed ? "Preferences could not be saved on this device." : "CRS and export preferences are saved on this device. Confirm the input CRS for each new file."}</p>
+
+        {pointTable && <GisColumnMapper table={pointTable} mapping={columnMapping} hasHeader={hasColumnHeader} applied={geometryLayer !== null} disabled={isReading || isExporting} onMapping={updateColumnMapping} onHeader={updateColumnHeader} onApply={applyColumnMapping} />}
 
         {visibleError && (
           <div
