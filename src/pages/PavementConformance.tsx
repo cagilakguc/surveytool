@@ -33,6 +33,9 @@ import CrsPicker from "../components/CrsPicker"
 import { loadCrsCatalogue, localGridCode, readMapSettings, saveMapSettings } from "../lib/mapCoordinates"
 import type { Basemap, MapCrs, MapProjectSettings } from "../lib/mapCoordinates"
 import { buildPavementMapGeometry, pavementMapCoordinateError, pavementMapKey } from "../lib/pavementMap"
+import PavementDesignPanel from "../components/PavementDesignPanel"
+import { defaultPavementDesign, restorePavementDesign } from "../lib/pavementDesign"
+import type { PavementDesignState } from "../lib/pavementDesign"
 
 const SurveyMap = lazy(() => import("../components/SurveyMap"))
 
@@ -523,6 +526,8 @@ export default function PavementConformance() {
   const [matchMode, setMatchMode] =
     useState<MatchMode>("auto")
   const [error, setError] = useState("")
+  const [designState, setDesignState] = useState<PavementDesignState>({ ...defaultPavementDesign })
+  const [designReset, setDesignReset] = useState(0)
   const mapKey = pavementMapKey(bottomFile?.name, topFile?.name)
   const savedMapSettings = useMemo(() => readMapSettings(mapKey), [mapKey])
   const [mapUpdates, setMapUpdates] = useState<Record<string, MapProjectSettings>>({})
@@ -635,6 +640,8 @@ export default function PavementConformance() {
   }
 
   function loadDemo() {
+    setDesignState({ ...defaultPavementDesign })
+    setDesignReset((value) => value + 1)
     setBottomFile(
       parseSurveyText(demoBottom, "demo-bottom-base.csv"),
     )
@@ -652,6 +659,8 @@ export default function PavementConformance() {
   function reset() {
     setBottomFile(null)
     setTopFile(null)
+    setDesignState({ ...defaultPavementDesign })
+    setDesignReset((value) => value + 1)
     setError("")
   }
 
@@ -727,19 +736,21 @@ export default function PavementConformance() {
   return (
     <div className="relative z-10 min-h-screen px-6 py-20 md:py-24">
       <PageSeo
-        title="Pavement Thickness Conformance Report | SurveyTool.io"
-        description="Compare bottom and top pavement survey CSV or TXT files, calculate layer thickness, apply tolerances and export a conformance report online."
+        title="Pavement FSL and Thickness Conformance Report | SurveyTool.io"
+        description="Compare asbuilt pavement points with an FSL LandXML surface, calculate alignment chainages and offsets, check layer thickness and export conformance reports."
         canonicalUrl="https://www.surveytool.io/tools/pavement-conformance"
       />
 
       <div className="mx-auto max-w-7xl">
-        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode,mapSettings}} onRestore={(state)=>{
+        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode,mapSettings,designState}} onRestore={(state)=>{
           for(const key of ["bottomFile","topFile"])if(state[key]!==null){const file=record(state[key]);assertPointLayer({...file,format:"CSV"})}
           const target=Number(state.targetThicknessMm),tolerance=Number(state.toleranceMm),distance=Number(state.coordinateTolerance)
           if(![target,tolerance,distance].every(Number.isFinite)||target<0||tolerance<0||distance<=0||!["auto","point-id","coordinate"].includes(String(state.matchMode)))throw new Error("Invalid saved pavement settings.")
           const bottom=state.bottomFile as ParsedSurveyFile|null,top=state.topFile as ParsedSurveyFile|null
           const restoredMap=readMapSettings("restore",{getItem:()=>JSON.stringify(state.mapSettings??null)})
+          const restoredDesign=restorePavementDesign(state.designState)
           setMapUpdates((previous)=>({...previous,[pavementMapKey(bottom?.name,top?.name)]:restoredMap}))
+          setDesignState(restoredDesign);setDesignReset((value)=>value+1)
           setBottomFile(state.bottomFile as ParsedSurveyFile|null);setTopFile(state.topFile as ParsedSurveyFile|null);setTargetThicknessMm(target);setToleranceMm(tolerance);setCoordinateTolerance(distance);setMatchMode(state.matchMode as MatchMode);setError("")
         }}/>
 
@@ -760,9 +771,9 @@ export default function PavementConformance() {
               Pavement Conformance Report
             </h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-400">
-              Upload the bottom and top survey point files, match common
-              locations, calculate constructed thickness and instantly identify
-              points outside tolerance.
+              Check asbuilt pavement levels against the selected FSL design,
+              show alignment chainages and offsets, or compare bottom and top
+              surveys for constructed layer thickness.
             </p>
           </div>
 
@@ -774,15 +785,15 @@ export default function PavementConformance() {
 
         <section className="mt-10 grid gap-5 lg:grid-cols-2">
           <UploadCard
-            title="1. Bottom layer survey"
-            description="Subgrade, subbase, basecourse or lower pavement points."
+            title="1. Bottom layer survey (for thickness)"
+            description="Subgrade, subbase, basecourse or lower pavement points. Optional for the FSL design check."
             file={bottomFile}
             onChoose={() => bottomInputRef.current?.click()}
             onDrop={(event) => handleDrop(event, "bottom")}
           />
           <UploadCard
-            title="2. Top layer survey"
-            description="Upper pavement or finished surface points measured at matching locations."
+            title="2. Top / asbuilt survey"
+            description="Measured pavement points to compare with the FSL design, or the top of the layer for thickness checks."
             file={topFile}
             onChoose={() => topInputRef.current?.click()}
             onDrop={(event) => handleDrop(event, "top")}
@@ -797,7 +808,7 @@ export default function PavementConformance() {
           >
             Load demo data
           </button>
-          {(bottomFile || topFile) && (
+          {(bottomFile || topFile || designState.alignmentDocument || designState.fslDocument) && (
             <button
               type="button"
               onClick={reset}
@@ -851,6 +862,8 @@ export default function PavementConformance() {
             </ul>
           </section>
         ) : null}
+
+        <PavementDesignPanel key={designReset} state={designState} onChange={setDesignState} measured={topFile} mapSettings={mapSettings} onMapChange={updateMapSettings} />
 
         {bottomFile && topFile && (
           <div className="mt-8 space-y-8">

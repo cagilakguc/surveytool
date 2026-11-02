@@ -68,7 +68,7 @@ const features: Feature[] = [
     icon: ClipboardList,
     title: "Pavement Conformance",
     description:
-      "Compare top and bottom survey points, apply thickness tolerances and export pass/fail reports.",
+      "Check asbuilt points against FSL, show alignment chainages and offsets, and report pavement thickness conformance.",
     to: "/tools/pavement-conformance",
   },
 ]

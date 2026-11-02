@@ -25,11 +25,11 @@ import { buildGisMapData } from "../lib/gisMapGeometry"
 import type { SurveyGeometryLayer } from "../lib/surveyGeometry"
 import type { SectionLine } from "../lib/sectionOptions"
 import { createTinSampler } from "../lib/asBuiltConformance"
-import { horizontalAlignment } from "../lib/alignmentGeometry"
+import { alignmentChainageMarkers } from "../lib/alignmentStationing"
 import "ol/ol.css"
 import "./SurveyMap.css"
 
-type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string; fullDetail?: boolean }
+type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string; chainageInterval?: number; fullDetail?: boolean }
 type Hover = { name: string; easting?: number; northing?: number; elevation?: number; difference?: number; coordinateLabel?: string }
 
 function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>, edges = false) {
@@ -51,7 +51,7 @@ function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>
   return style
 }
 
-export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName, fullDetail = false }: SurveyMapProps) {
+export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName, chainageInterval = 10, fullDetail = false }: SurveyMapProps) {
   const [showTinEdges, setShowTinEdges] = useState(false)
   const edgesRef = useRef(false)
   edgesRef.current = showTinEdges
@@ -67,6 +67,8 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
   const sectionSourceRef = useRef<VectorSource | null>(null)
   const stationSourceRef = useRef<VectorSource | null>(null)
   const [showChainages, setShowChainages] = useState(true)
+  const showChainagesRef = useRef(showChainages)
+  showChainagesRef.current = showChainages
   const sectionDrawRef = useRef(onSectionDraw)
   sectionDrawRef.current = onSectionDraw
   const [drawActive, setDrawActive] = useState(false)
@@ -105,7 +107,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
         source: stationSource,
         declutter: true,
         style: (feature, resolution) => {
-          if (!showChainages || resolution > 4 && !feature.get("major") || resolution > 35) return undefined
+          if (!showChainagesRef.current || resolution > 4 && !feature.get("major") || resolution > 35) return undefined
           return new Style({
             image: new CircleStyle({ radius: 2.5, fill: new Fill({ color: "#facc15" }), stroke: new Stroke({ color: "#0f172a", width: 1 }) }),
             text: new Text({ text: String(feature.get("label")), offsetY: -13, font: "bold 11px sans-serif", fill: new Fill({ color: "#ffffff" }), stroke: new Stroke({ color: "#0f172a", width: 4 }), padding: [2, 3, 2, 3] }),
@@ -151,7 +153,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     } catch {
       setInitialisationError("The interactive map could not start in this browser. Use the plan view or try another browser.")
     }
-  }, [canRender, isComparison, showChainages])
+  }, [canRender, isComparison])
 
   useEffect(() => {
     if (!data.value || !mapRef.current) return
@@ -172,16 +174,12 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     try {
       const project = createMapTransform(crs)
       for (const alignment of document.alignments.filter((item) => !selectedAlignmentName || item.name === selectedAlignmentName)) {
-        const range = horizontalAlignment(alignment)
-        const first = Math.ceil((range.start - 1e-7) / 10) * 10
-        for (let chainage = first; chainage <= range.end + 1e-7; chainage += 10) {
-          const position = range.at(Math.min(range.length, Math.max(0, chainage - range.start)))
-          const label = `${Math.floor(chainage / 1000)}+${(chainage % 1000).toFixed(0).padStart(3, "0")}`
+        for (const position of alignmentChainageMarkers(alignment, chainageInterval).markers) {
           source.addFeature(new Feature({
             geometry: new Point(project(position.easting, position.northing)),
-            name: `${alignment.name} · CH ${label}`,
-            label: `CH ${label}`,
-            major: Math.round(chainage) % 100 === 0,
+            name: `${alignment.name} · ${position.label}`,
+            label: position.label,
+            major: position.major,
             easting: position.easting,
             northing: position.northing,
           }))
@@ -190,7 +188,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     } catch {
       // Unsupported alignments remain visible without generated station markers.
     }
-  }, [document, crs, showChainages, selectedAlignmentName, canRender])
+  }, [document, crs, showChainages, selectedAlignmentName, chainageInterval, canRender])
 
   useEffect(() => { vectorRef.current?.setOpacity(opacity / 100) }, [opacity, data])
 
@@ -273,7 +271,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <p className="min-w-0 text-xs text-slate-300"><strong className="text-white">{comparison ? "Surface difference" : "Survey map"}</strong> · {crs.code} · {basemap === "google" ? "Google satellite" : basemap === "aerial" ? "Aerial / satellite" : basemap === "street" ? "Street map" : "No background"}</p>
         {fullDetail && <label className="inline-flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={showTinEdges} onChange={event => { setShowTinEdges(event.target.checked); edgesRef.current = event.target.checked; vectorRef.current?.changed() }} />TIN edges</label>}
-        {onSectionDraw&&document?.alignments.length ? <label className="inline-flex items-center gap-2 text-xs text-amber-200"><input type="checkbox" checked={showChainages} onChange={(event)=>setShowChainages(event.target.checked)} className="accent-amber-400" />Show chainages</label> : null}
+        {document?.alignments.length ? <label className="inline-flex items-center gap-2 text-xs text-amber-200"><input type="checkbox" checked={showChainages} onChange={(event)=>setShowChainages(event.target.checked)} className="accent-amber-400" />Show chainages</label> : null}
         {onSectionDraw&&<button type="button" onClick={()=>{setDrawActive((value)=>!value);setDrawError("")}} className="rounded-full border border-rose-300/40 bg-rose-300/10 px-3 py-1.5 text-xs font-semibold text-rose-100">{drawActive?"Cancel drawing":"Draw section line"}</button>}
         <button type="button" onClick={() => data.value && mapRef.current?.getView().fit(data.value.extent, { padding: [45, 45, 45, 45], maxZoom: 20, duration: 200 })} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/10"><Maximize2 size={14} />{geometry ? "Fit to points" : "Fit to surface"}</button>
       </div>
