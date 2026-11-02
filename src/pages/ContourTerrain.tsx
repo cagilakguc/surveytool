@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -98,6 +99,7 @@ export default function ContourTerrain() {
   );
   function exportFile(content: BlobPart, mime: string, fileName: string) {
     setPreparedExport(downloadReportBlob(content, mime, fileName, true));
+    trackToolAction("terrain", "export_prepared");
   }
   const selected =
     input?.paths.filter((p) => p.enabled && p.id !== settings.boundaryId) ?? [];
@@ -215,6 +217,7 @@ export default function ContourTerrain() {
     setBusy("Validating contours and building the terrain…");
     try {
       setMesh(await task<TerrainMesh>({ type: "build", input, settings }));
+      trackToolAction("terrain", "calculate_complete");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "The surface could not be generated.",

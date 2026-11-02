@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import ProjectPanel from "../components/ProjectPanel"
 import ReportDownloads from "../components/ReportDownloads"
 import type { SurveyReport } from "../lib/surveyReports"
@@ -600,6 +601,7 @@ export default function PavementConformance() {
       } else {
         setTopFile(parsed)
       }
+      trackToolAction("pavement", "import_complete", { source: "upload" })
       setError("")
     } catch (caughtError) {
       setError(
@@ -712,6 +714,7 @@ export default function PavementConformance() {
       .map((row) => row.map(escapeCsv).join(","))
       .join("\n")
 
+    trackToolAction("pavement", "export_prepared", { format: "csv" })
     downloadText(
       csv,
       `pavement-conformance-${new Date()

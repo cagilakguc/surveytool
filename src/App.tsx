@@ -16,6 +16,7 @@ import HelpFeedbackButton from "./components/HelpFeedbackButton"
 import { AuthProvider } from "./context/AuthContext"
 import { OfflineNotice } from "./components/OfflineStatus"
 import VisitorAnalytics from "./components/VisitorAnalytics"
+import ToolUsageAnalytics from "./components/ToolUsageAnalytics"
 
 const AsBuiltCheck = lazy(() => import("./pages/AsBuiltCheck"))
 const LocalProjects = lazy(() => import("./pages/LocalProjects"))
@@ -72,6 +73,7 @@ function App() {
           <HelpFeedbackButton />
           <OfflineNotice />
           <VisitorAnalytics />
+          <ToolUsageAnalytics />
         </main>
       </AuthProvider>
     </BrowserRouter>

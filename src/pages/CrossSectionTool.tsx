@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import { assertSectionSettings } from "../lib/sectionOptions"
 import ProjectPanel from "../components/ProjectPanel"
 import { assertDocument, assertPointLayer, record } from "../lib/projectWorkspace"
@@ -195,6 +196,7 @@ export default function CrossSectionTool() {
       } else if (mergedDocument?.surfaces.length && mergedPointLayers.length > 0) {
         setShowWorkspace((current) => current || countLandXmlGeometry(mergedDocument).faces <= automaticWorkspaceFaceLimit)
       }
+      trackToolAction("sections", "import_complete", { source: "upload" })
     } catch (caughtError) {
       if (caughtError instanceof DOMException && caughtError.name === "AbortError") return
       setError(caughtError instanceof Error ? caughtError.message : "The selected files could not be opened.")

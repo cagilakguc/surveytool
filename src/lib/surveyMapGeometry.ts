@@ -1,6 +1,8 @@
 import proj4 from "proj4"
 import Feature from "ol/Feature.js"
 import Polygon from "ol/geom/Polygon.js"
+import MultiPolygon from "ol/geom/MultiPolygon.js"
+import { elevationColour, prepareDisplaySurface } from "./landxmlDisplay"
 import LineString from "ol/geom/LineString.js"
 import Point from "ol/geom/Point.js"
 import type Geometry from "ol/geom/Geometry.js"
@@ -52,7 +54,7 @@ export type SurveyMapData = {
   note: string
 }
 
-export function buildSurveyMapData(crs: MapCrs, document?: LandXmlDocument, comparison?: SurfaceComparison): SurveyMapData {
+export function buildSurveyMapData(crs: MapCrs, document?: LandXmlDocument, comparison?: SurfaceComparison, fullDetail = false): SurveyMapData {
   if (document) {
     const unitError = mapInputUnitError(document, crs)
     if (unitError) throw new Error(unitError)
@@ -111,6 +113,20 @@ export function buildSurveyMapData(crs: MapCrs, document?: LandXmlDocument, comp
           coordinate(minE, northing); coordinate(maxE, northing)
         }
       }
+      if (fullDetail && surface.faces.length) {
+        const mesh = prepareDisplaySurface(surface, coordinate)
+        const bands = new Map<number, number[][][][]>()
+        for (let f = 0; f < mesh.indices.length; f += 3) {
+          const ring = Array.from(mesh.indices.subarray(f, f + 3), index => [mesh.positions[index * 3], mesh.positions[index * 3 + 1]])
+          ring.push(ring[0])
+          const band = mesh.bands[f / 3]
+          let polygons = bands.get(band)
+          if (!polygons) { polygons = []; bands.set(band, polygons) }
+          polygons.push([ring])
+          displayedFaces++
+        }
+        for (const [band, polygons] of bands) features.push(new Feature({ geometry: new MultiPolygon(polygons), group, colour: band === 255 ? colour : elevationColour(band / 254), surfaceBand: band, completeSurface: true, name: surface.name }))
+      } else {
       for (let index = 0; index < surface.faces.length; index += faceStep) {
         const vertices = surface.faces[index].map((id) => surface.points[id])
         if (vertices.some((point) => !point)) continue
@@ -119,6 +135,7 @@ export function buildSurveyMapData(crs: MapCrs, document?: LandXmlDocument, comp
         const elevation = vertices.every((point) => point.elevation !== null) ? vertices.reduce((sum, point) => sum + (point.elevation ?? 0), 0) / 3 : null
         features.push(new Feature({ geometry: new Polygon([ring]), group, colour, name: surface.name, easting: vertices.reduce((sum, point) => sum + point.easting, 0) / 3, northing: vertices.reduce((sum, point) => sum + point.northing, 0) / 3, elevation, coordinateLabel: "Face centre" }))
         displayedFaces += 1
+      }
       }
       if (!surface.faces.length) {
         const values = Object.values(surface.points)
@@ -145,6 +162,6 @@ export function buildSurveyMapData(crs: MapCrs, document?: LandXmlDocument, comp
   validateMapLocation(crs, firstPoint[0], firstPoint[1])
   return {
     features, extent, groups,
-    note: totalFaces > displayedFaces ? `Mesh preview: ${displayedFaces.toLocaleString()} of ${totalFaces.toLocaleString()} triangles. Original surface data is retained.` : "",
+    note: fullDetail ? `Complete TIN · ${displayedFaces.toLocaleString()} triangles drawn${displayedFaces < totalFaces ? "; invalid or degenerate faces excluded" : ""}. Survey coordinates and elevations are retained.` : totalFaces > displayedFaces ? `Mesh preview: ${displayedFaces.toLocaleString()} of ${totalFaces.toLocaleString()} triangles. Original surface data is retained.` : "",
   }
 }

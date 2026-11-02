@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import ProjectPanel from "../components/ProjectPanel"
 import { assertDocument } from "../lib/projectWorkspace"
 import { mapProjectKey } from "../lib/useMapProject"
@@ -40,6 +41,7 @@ import {
 
 const maximumFileSize = 100 * 1024 * 1024
 const SurveyMap = lazy(() => import("../components/SurveyMap"))
+const LandXml3DView = lazy(() => import("../components/LandXml3DView"))
 const automaticPreviewFaceLimit = 20_000
 const maximumInteractiveFaceLimit = 300_000
 
@@ -94,7 +96,7 @@ export default function LandXmlViewer() {
   const [isReading, setIsReading] = useState(false)
   const [progress, setProgress] = useState({ stage: "", percent: 0 })
   const [showPreview, setShowPreview] = useState(false)
-  const [previewMode, setPreviewMode] = useState<"plan" | "map">("map")
+  const [previewMode, setPreviewMode] = useState<"plan" | "map" | "3d">("map")
   const mapFiles = useMemo(() => document ? [{ id: "file", label: "LandXML file", document }] : [], [document])
   const mapProject = useMapProject(mapFiles)
   const selectedCrs = mapProject.selections[0]?.crs
@@ -117,6 +119,7 @@ export default function LandXmlViewer() {
     applyDocument(parseLandXml(demoLandXml, "surveytool-demo.xml"))
     setIsReading(false)
     setProgress({ stage: "", percent: 0 })
+    trackToolAction("landxml", "demo_open", { source: "demo" })
   }
 
   async function loadFile(file: File) {
@@ -142,6 +145,7 @@ export default function LandXmlViewer() {
       })
       if (controller.signal.aborted) return
       applyDocument(parsed)
+      trackToolAction("landxml", "import_complete", { source: "upload", format: "xml" })
     } catch (caughtError) {
       if (
         caughtError instanceof DOMException &&
@@ -161,6 +165,11 @@ export default function LandXmlViewer() {
         setProgress({ stage: "", percent: 0 })
       }
     }
+  }
+
+  function choosePreviewMode(mode: "plan" | "map" | "3d") {
+    setPreviewMode(mode)
+    trackToolAction("landxml", "preview_mode", { mode })
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -185,7 +194,7 @@ export default function LandXmlViewer() {
     <div className="relative z-10 min-h-screen px-6 py-20 md:py-24">
       <PageSeo
         title="LandXML Viewer Online for Surveyors | SurveyTool.io"
-        description="Open LandXML files online and inspect survey surfaces, TIN faces, alignments and COGO points in a private browser-based plan viewer."
+        description="View LandXML surfaces online in full-detail plan, background map and interactive 3D. Inspect TIN faces, alignments and COGO points privately in your browser."
         canonicalUrl="https://www.surveytool.io/tools/landxml-viewer"
       />
 
@@ -207,8 +216,8 @@ export default function LandXmlViewer() {
               LandXML Viewer
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-400">
-              Open a LandXML file and inspect surfaces, alignments and points.
-              Large files are parsed away from the page so the browser remains responsive.
+              Inspect surfaces, alignments and points in sharp plan, map and 3D views.
+              Your file is processed locally in your browser.
             </p>
           </div>
 
@@ -221,9 +230,9 @@ export default function LandXmlViewer() {
         <ProjectPanel tool="landxml" disabled={isReading} state={{document,previewMode,showPreview,mapSettings:mapProject.settings}} onRestore={(state)=>{
           if(state.document!==null)assertDocument(state.document)
           const next=state.document as LandXmlDocument|null
-          if(!["plan","map"].includes(String(state.previewMode)))throw new Error("Invalid saved preview mode.")
+          if(!["plan","map","3d"].includes(String(state.previewMode)))throw new Error("Invalid saved preview mode.")
           if(next){const key=mapProjectKey([{id:"file",label:"LandXML file",document:next}]);mapProject.restoreSettings(key,readMapSettings("restore",{getItem:()=>JSON.stringify(state.mapSettings)}))}
-          setDocument(next);setPreviewMode(state.previewMode as "plan"|"map");setShowPreview(state.showPreview===true);setError("")
+          setDocument(next);setPreviewMode(state.previewMode as "plan"|"map"|"3d");setShowPreview(state.showPreview===true);setError("")
         }}/>
 
         <div
@@ -355,13 +364,14 @@ export default function LandXmlViewer() {
             {showPreview ? (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2" aria-label="Preview mode">
-                  <button type="button" aria-pressed={!mapIsVisible} onClick={() => setPreviewMode("plan")} className={`rounded-full border px-5 py-2 text-sm font-semibold ${!mapIsVisible ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>Plan view</button>
-                  <button type="button" aria-pressed={mapIsVisible} disabled={!selectedCrs} onClick={() => setPreviewMode("map")} className={`rounded-full border px-5 py-2 text-sm font-semibold disabled:opacity-40 ${mapIsVisible ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>Map view</button>
+                  <button type="button" aria-pressed={previewMode !== "3d" && !mapIsVisible} onClick={() => choosePreviewMode("plan")} className={`rounded-full border px-5 py-2 text-sm font-semibold ${previewMode !== "3d" && !mapIsVisible ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>Plan view</button>
+                  <button type="button" aria-pressed={mapIsVisible} disabled={!selectedCrs} onClick={() => choosePreviewMode("map")} className={`rounded-full border px-5 py-2 text-sm font-semibold disabled:opacity-40 ${mapIsVisible ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>Map view</button>
+                  <button type="button" aria-pressed={previewMode === "3d"} disabled={!document.surfaces.some(surface => surface.faces.length > 0)} onClick={() => choosePreviewMode("3d")} className={`rounded-full border px-5 py-2 text-sm font-semibold disabled:opacity-40 ${previewMode === "3d" ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200" : "border-white/15 text-slate-300"}`}>3D view</button>
                   {!selectedCrs && <span className="text-xs text-slate-400">Select a coordinate system to enable the background map.</span>}
                 </div>
-                {mapIsVisible && selectedCrs ? (
+                {previewMode === "3d" ? <Suspense fallback={<p role="status" className="p-6 text-sm text-slate-400">Preparing full-detail 3D surface…</p>}><LandXml3DView key={document.fileName} document={document} /></Suspense> : mapIsVisible && selectedCrs ? (
                   <Suspense fallback={<p role="status" className="p-6 text-sm text-slate-400">Loading survey map…</p>}>
-                    <SurveyMap document={document} crs={selectedCrs} basemap={mapProject.settings.basemap} opacity={mapProject.settings.opacity} />
+                    <SurveyMap fullDetail document={document} crs={selectedCrs} basemap={mapProject.settings.basemap} opacity={mapProject.settings.opacity} />
                   </Suspense>
                 ) : <LandXmlPreview document={document} />}
               </div>

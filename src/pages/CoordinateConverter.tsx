@@ -1,3 +1,4 @@
+import { trackToolAction } from "../lib/toolUsage"
 import ProjectPanel from "../components/ProjectPanel"
 import { assertPointLayer } from "../lib/projectWorkspace"
 import {
@@ -222,6 +223,7 @@ export default function CoordinateConverter() {
         output.mimeType,
         `${baseName}-${crsSuffix}.${output.extension}`,
       )
+      trackToolAction("coordinates", "export_prepared")
       setFileError("")
     } catch (caughtError) {
       setFileError(
