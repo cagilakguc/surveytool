@@ -24,7 +24,8 @@
     "test:pavement": "node --import tsx scripts/validate-pavement-design.mjs",
     "test:pavement-workspace": "node --import tsx scripts/validate-pavement-workspace.mjs",
     "test:pavement-bottom": "node --import tsx scripts/validate-pavement-bottom-surface.mjs",
-    "test:tin-boundaries": "node --import tsx scripts/validate-tin-boundaries.mjs"
+    "test:tin-boundaries": "node --import tsx scripts/validate-tin-boundaries.mjs",
+    "test:pavement-thickness": "node --import tsx scripts/validate-pavement-thickness.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

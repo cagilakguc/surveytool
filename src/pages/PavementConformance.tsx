@@ -30,7 +30,7 @@ import PageSeo from "../components/PageSeo"
 import CrsPicker from "../components/CrsPicker"
 import { loadCrsCatalogue, readMapSettings, saveMapSettings } from "../lib/mapCoordinates"
 import type { Basemap, MapCrs, MapProjectSettings } from "../lib/mapCoordinates"
-import { buildPavementMapGeometry, defaultPavementWorkspace, filterThicknessPoints, pavementMapKey, pavementThicknessColours, thicknessClass, thicknessFilterLabel, restorePavementWorkspace, withPavementDxf, pavementReportLines } from "../lib/pavementMap"
+import { buildPavementMapGeometry, defaultPavementWorkspace, filterThicknessPoints, pavementMapKey, pavementThicknessColours, thicknessClass, thicknessFilterLabel, thicknessLegend, restorePavementWorkspace, withPavementDxf, pavementReportLines } from "../lib/pavementMap"
 import type { PavementWorkspaceState, ThicknessFilter } from "../lib/pavementMap"
 import type { PavementMeasurement } from "../lib/pavementSection"
 import type { LandXmlDocument } from "../lib/landxml"
@@ -45,6 +45,8 @@ import type { PavementBottomState, SurfaceThicknessRow, SurfaceThicknessRequest,
 import { pavementDesignUnitError } from "../lib/pavementDesign"
 import { defaultPavementDesign, restorePavementDesign } from "../lib/pavementDesign"
 import type { PavementDesignState } from "../lib/pavementDesign"
+import { restoreThicknessRule, thicknessAcceptanceLabel, thicknessColourNote, thicknessCriteriaMetadata, thicknessPasses } from "../lib/pavementThickness"
+import type { ThicknessRule } from "../lib/pavementThickness"
 
 
 type SurveyPoint = {
@@ -333,6 +335,7 @@ function matchSurveyPoints(
   toleranceMm: number,
   coordinateTolerance: number,
   mode: MatchMode,
+  thicknessRule: ThicknessRule,
 ): MatchSummary {
   const safeCoordinateTolerance = Math.max(
     coordinateTolerance,
@@ -455,7 +458,7 @@ function matchSurveyPoints(
       (topPoint.elevation - bottomPoint.elevation) * 1000
     const deviationMm = thicknessMm - targetThicknessMm
     const status =
-      Math.abs(deviationMm) <= toleranceMm + 1e-7
+      thicknessPasses(deviationMm, toleranceMm, thicknessRule)
         ? "pass"
         : "fail"
 
@@ -502,7 +505,7 @@ function formatLevel(value: number) {
 }
 
 function formatMillimetres(value: number) {
-  return (Math.abs(value) < 0.5 ? 0 : value).toFixed(0)
+  return (Math.abs(value) < 0.05 ? 0 : value).toFixed(1)
 }
 
 export default function PavementConformance() {
@@ -519,7 +522,8 @@ export default function PavementConformance() {
   const bottomReferenceName = isBottomSurface ? bottomDocument ? `${bottomDocument.fileName} / ${bottomState.surfaceName}` : "" : bottomFile?.name ?? ""
   const bottomReady = isBottomSurface ? Boolean(bottomDocument) : Boolean(bottomFile)
   const [targetThicknessMm, setTargetThicknessMm] =
-    useState(250)
+    useState(75)
+  const [thicknessRule, setThicknessRule] = useState<ThicknessRule>("minimum")
   const [toleranceMm, setToleranceMm] = useState(20)
   const [coordinateTolerance, setCoordinateTolerance] =
     useState(0.05)
@@ -563,19 +567,21 @@ export default function PavementConformance() {
       Math.max(toleranceMm, 0),
       Math.max(coordinateTolerance, 0.0001),
       matchMode,
+      thicknessRule,
     )
   }, [
     isBottomSurface,
     bottomFile,
     coordinateTolerance,
     matchMode,
+    thicknessRule,
     targetThicknessMm,
     toleranceMm,
     topFile,
   ])
 
   const bottomUnitError = isBottomSurface ? pavementDesignUnitError(bottomState.document) : ""
-  const surfaceRequest = useMemo<SurfaceThicknessRequest | null>(() => isBottomSurface && bottomSurface && bottomState.document && topFile && !bottomUnitError ? { surface: bottomSurface, units: bottomState.document.units, points: topFile.points, targetMm: targetThicknessMm, toleranceMm } : null, [isBottomSurface, bottomSurface, bottomState.document, topFile, bottomUnitError, targetThicknessMm, toleranceMm])
+  const surfaceRequest = useMemo<SurfaceThicknessRequest | null>(() => isBottomSurface && bottomSurface && bottomState.document && topFile && !bottomUnitError ? { surface: bottomSurface, units: bottomState.document.units, points: topFile.points, targetMm: targetThicknessMm, toleranceMm, rule: thicknessRule } : null, [isBottomSurface, bottomSurface, bottomState.document, topFile, bottomUnitError, targetThicknessMm, toleranceMm, thicknessRule])
   const [surfaceWork, setSurfaceWork] = useState<{ request: SurfaceThicknessRequest; percent: number; result?: SurfaceThicknessResult; error?: string } | null>(null)
   useEffect(() => {
     if (!surfaceRequest) { setSurfaceWork(null); return }
@@ -604,8 +610,8 @@ export default function PavementConformance() {
   const unassessed = comparison?.unassessed ?? noUnassessed
   const visibleUnassessed = workspace.filter === "all" || workspace.filter === "unassessed" ? unassessed : noUnassessed
   const cutoffMm = workspace.cutoffMm ?? targetThicknessMm
-  const filteredResults = useMemo(() => filterThicknessPoints(comparison?.results ?? [], workspace.filter, cutoffMm, toleranceMm), [comparison, workspace.filter, cutoffMm, toleranceMm])
-  const filterLabel = isBottomSurface && workspace.filter === "all" ? "All top / asbuilt points" : thicknessFilterLabel(workspace.filter, cutoffMm)
+  const filteredResults = useMemo(() => filterThicknessPoints(comparison?.results ?? [], workspace.filter, cutoffMm, toleranceMm, thicknessRule), [comparison, workspace.filter, cutoffMm, toleranceMm, thicknessRule])
+  const filterLabel = isBottomSurface && workspace.filter === "all" ? "All top / asbuilt points" : thicknessFilterLabel(workspace.filter, cutoffMm, thicknessRule)
   const statistics = useMemo(() => {
     let minimum = Infinity, maximum = -Infinity, sum = 0, passed = 0
     for (const row of filteredResults) {
@@ -677,6 +683,7 @@ export default function PavementConformance() {
       parseSurveyText(demoTop, "demo-top-ac20.csv"),
     )
     setTargetThicknessMm(250)
+    setThicknessRule("minimum")
     setToleranceMm(20)
     setCoordinateTolerance(0.05)
     setMatchMode("auto")
@@ -685,6 +692,8 @@ export default function PavementConformance() {
   }
 
   function reset() {
+    setThicknessRule("minimum")
+    setTargetThicknessMm(75)
     setBottomFile(null)
     setTopFile(null)
     setBottomState({ ...defaultPavementBottom })
@@ -699,14 +708,14 @@ export default function PavementConformance() {
     const overlay = withPavementDxf({ name: "Reference", format: "DXF", points: [], lines: [], polygons: [], warnings: [] }, workspace.overlays, workspace.hiddenLayers)
     return {
       title: "Pavement Thickness Conformance Report", project: `${bottomReferenceName} / ${topFile.name}`, createdAt: new Date().toISOString(),
-      metadata: [["Bottom reference", bottomReferenceName], ["Bottom source type", isBottomSurface ? "LandXML TIN surface" : "Survey points"], ["Bottom surface", isBottomSurface ? bottomState.surfaceName : "Not applicable"], ["Top file", topFile.name], ["Target thickness (mm)", targetThicknessMm], ["Tolerance (mm)", toleranceMm], ["Point filter / report scope", filterLabel], ["Filter cutoff (mm)", cutoffMm], ["Coordinate match tolerance (m)", isBottomSurface ? null : coordinateTolerance], ["Assessment method", isBottomSurface ? "Bottom TIN interpolated at original top-point XY" : matchMode], ["CRS", mapSettings.defaultCrs || "Not specified"], ["Common vertical datum", designState.datum || "Confirm a common height datum"], ["Alignment", designState.alignmentName || "None"], ["DXF reference files", workspace.overlays.map((layer) => layer.name).join("; ") || "None"], ["Visible DXF layers", Object.keys(overlay.pointColours ?? {}).join("; ") || "None"]],
+      metadata: [["Bottom reference", bottomReferenceName], ["Bottom source type", isBottomSurface ? "LandXML TIN surface" : "Survey points"], ["Bottom surface", isBottomSurface ? bottomState.surfaceName : "Not applicable"], ["Top file", topFile.name], ...thicknessCriteriaMetadata(targetThicknessMm, toleranceMm, thicknessRule), ["Point filter / report scope", filterLabel], ["Filter cutoff (mm)", cutoffMm], ["Coordinate match tolerance (m)", isBottomSurface ? null : coordinateTolerance], ["Assessment method", isBottomSurface ? "Bottom TIN interpolated at original top-point XY" : matchMode], ["CRS", mapSettings.defaultCrs || "Not specified"], ["Common vertical datum", designState.datum || "Confirm a common height datum"], ["Alignment", designState.alignmentName || "None"], ["DXF reference files", workspace.overlays.map((layer) => layer.name).join("; ") || "None"], ["Visible DXF layers", Object.keys(overlay.pointColours ?? {}).join("; ") || "None"]],
       summary: [["Assessed thickness points", comparison.results.length], ["Unassessed top points", unassessed.length], ["Points in report filter", filteredResults.length + visibleUnassessed.length], ["Passing in filter", statistics.passed], ["Failing in filter", statistics.failed], ["Unmatched bottom survey points", isBottomSurface ? null : comparison.unmatchedBottom], ["Unmatched top survey points", isBottomSurface ? null : comparison.unmatchedTop]],
-      columns: ["Point ID", "Easting", "Northing", "Bottom RL", "Top RL", "Thickness (mm)", "Deviation (mm)", "Thickness class", "Status", "Assessment method", "Horizontal difference (m)", "Code"],
-      rows: [...filteredResults.map((row) => [row.id, row.easting, row.northing, row.bottomElevation, row.topElevation, row.thicknessMm, row.deviationMm, thicknessClass(row, toleranceMm), row.status.toUpperCase(), row.matchMethod, row.horizontalDifference, row.code]), ...visibleUnassessed.map((row) => [row.id, row.easting, row.northing, null, row.topElevation, null, null, "UNASSESSED", row.reason, "bottom-tin", null, row.code])],
-      notes: ["Report scope follows the selected thickness filter. Passing, failing and compliance statistics use assessed points only. Unassessed points have no reliable bottom level and are never counted as passes or assigned a zero thickness.", isBottomSurface ? "Thickness = measured top RL minus the bottom TIN level interpolated at the top point's original Easting/Northing. No matching point IDs are needed. Surface holes, points outside the TIN, missing levels and overlapping triangles with conflicting levels remain unassessed; no extrapolation is applied." : "Thickness = measured top RL minus matched bottom survey RL. Unmatched points are not assessed.", "Blue: within target ± tolerance. Red: too thin. Amber: too thick. Grey: unassessed. All files and DXF references must share a metre grid and common vertical datum. Background imagery is not included; the PDF uses a source-grid plan with visible DXF strings (up to 10,000 line segments).", ...(comparison.rejectedFaces ? [`Ignored ${comparison.rejectedFaces} invalid or degenerate bottom TIN faces.`] : []), ...(isBottomSurface ? bottomState.document?.warnings ?? [] : bottomFile?.warnings ?? []), ...topFile.warnings, ...workspace.overlays.flatMap((layer) => layer.warnings)],
-      plot: { points: [...filteredResults.map((row) => ({ easting: row.easting, northing: row.northing, colour: pavementThicknessColours[thicknessClass(row, toleranceMm)], label: `${row.thicknessMm.toFixed(0)} mm` })), ...visibleUnassessed.map((row) => ({ easting: row.easting, northing: row.northing, colour: "#94a3b8", label: "Unassessed" }))], lines: [...pavementReportLines(overlay), ...(selectedDocument?.alignments ?? []).map((alignment) => ({ points: alignment.points, colour: "#eab308" }))], legend: { ...pavementThicknessColours, ...(visibleUnassessed.length ? { UNASSESSED: "#94a3b8" } : {}) } },
+      columns: ["Point ID", "Easting", "Northing", "Bottom RL", "Top RL", "Thickness (mm)", thicknessRule === "minimum" ? "Difference from minimum (mm)" : "Deviation from target (mm)", "Thickness class", "Status", "Assessment method", "Horizontal difference (m)", "Code"],
+      rows: [...filteredResults.map((row) => [row.id, row.easting, row.northing, row.bottomElevation, row.topElevation, row.thicknessMm, row.deviationMm, thicknessClass(row, toleranceMm, thicknessRule), row.status.toUpperCase(), row.matchMethod, row.horizontalDifference, row.code]), ...visibleUnassessed.map((row) => [row.id, row.easting, row.northing, null, row.topElevation, null, null, "UNASSESSED", row.reason, "bottom-tin", null, row.code])],
+      notes: ["Report scope follows the selected thickness filter. Passing, failing and compliance statistics use assessed points only. Unassessed points have no reliable bottom level and are never counted as passes or assigned a zero thickness.", isBottomSurface ? "Thickness = measured top RL minus the bottom TIN level interpolated at the top point's original Easting/Northing. No matching point IDs are needed. Surface holes, points outside the TIN, missing levels and overlapping triangles with conflicting levels remain unassessed; no extrapolation is applied." : "Thickness = measured top RL minus matched bottom survey RL. Unmatched points are not assessed.", thicknessColourNote(thicknessRule), "All files and DXF references must share a metre grid and common vertical datum. Background imagery is not included; the PDF uses a source-grid plan with visible DXF strings (up to 10,000 line segments).", ...(comparison.rejectedFaces ? [`Ignored ${comparison.rejectedFaces} invalid or degenerate bottom TIN faces.`] : []), ...(isBottomSurface ? bottomState.document?.warnings ?? [] : bottomFile?.warnings ?? []), ...topFile.warnings, ...workspace.overlays.flatMap((layer) => layer.warnings)],
+      plot: { points: [...filteredResults.map((row) => ({ easting: row.easting, northing: row.northing, colour: pavementThicknessColours[thicknessClass(row, toleranceMm, thicknessRule)], label: `${row.thicknessMm.toFixed(0)} mm` })), ...visibleUnassessed.map((row) => ({ easting: row.easting, northing: row.northing, colour: "#94a3b8", label: "Unassessed" }))], lines: [...pavementReportLines(overlay), ...(selectedDocument?.alignments ?? []).map((alignment) => ({ points: alignment.points, colour: "#eab308" }))], legend: { ...thicknessLegend(thicknessRule), ...(visibleUnassessed.length ? { UNASSESSED: "#94a3b8" } : {}) } },
     }
-  }, [comparison, bottomReferenceName, isBottomSurface, bottomState.document, bottomState.surfaceName, bottomFile, topFile, workspace.overlays, workspace.hiddenLayers, targetThicknessMm, toleranceMm, filterLabel, cutoffMm, coordinateTolerance, matchMode, mapSettings.defaultCrs, designState.datum, designState.alignmentName, filteredResults, statistics, selectedDocument, unassessed, visibleUnassessed])
+  }, [comparison, bottomReferenceName, isBottomSurface, bottomState.document, bottomState.surfaceName, bottomFile, topFile, workspace.overlays, workspace.hiddenLayers, targetThicknessMm, toleranceMm, thicknessRule, filterLabel, cutoffMm, coordinateTolerance, matchMode, mapSettings.defaultCrs, designState.datum, designState.alignmentName, filteredResults, statistics, selectedDocument, unassessed, visibleUnassessed])
 
   function exportReport() {
     if (!structuredReport) return
@@ -723,7 +732,7 @@ export default function PavementConformance() {
       />
 
       <div className="mx-auto max-w-7xl">
-        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,coordinateTolerance,matchMode,mapSettings,designState,workspace,bottomState}} onRestore={(state)=>{
+        <ProjectPanel tool="pavement" state={{bottomFile,topFile,targetThicknessMm,toleranceMm,thicknessRule,coordinateTolerance,matchMode,mapSettings,designState,workspace,bottomState}} onRestore={(state)=>{
           for(const key of ["bottomFile","topFile"])if(state[key]!==null){const file=record(state[key]);assertPointLayer({...file,format:"CSV"})}
           const target=Number(state.targetThicknessMm),tolerance=Number(state.toleranceMm),distance=Number(state.coordinateTolerance)
           if(![target,tolerance,distance].every(Number.isFinite)||target<0||tolerance<0||distance<=0||!["auto","point-id","coordinate"].includes(String(state.matchMode)))throw new Error("Invalid saved pavement settings.")
@@ -732,9 +741,10 @@ export default function PavementConformance() {
           const restoredDesign=restorePavementDesign(state.designState)
           const restoredWorkspace=restorePavementWorkspace(state.workspace)
           const restoredBottom=restorePavementBottom(state.bottomState)
+          const restoredThicknessRule=restoreThicknessRule(state.thicknessRule)
           setMapUpdates((previous)=>({...previous,[pavementMapKey(restoredBottom.mode === "surface" ? restoredBottom.document && restoredBottom.surfaceName ? `${restoredBottom.document.fileName} / ${restoredBottom.surfaceName}` : "" : bottom?.name,top?.name)]:restoredMap}))
           setBottomState(restoredBottom);setWorkspace(restoredWorkspace);setDesignState(restoredDesign);setDesignReset((value)=>value+1)
-          setBottomFile(state.bottomFile as ParsedSurveyFile|null);setTopFile(state.topFile as ParsedSurveyFile|null);setTargetThicknessMm(target);setToleranceMm(tolerance);setCoordinateTolerance(distance);setMatchMode(state.matchMode as MatchMode);setError("")
+          setBottomFile(state.bottomFile as ParsedSurveyFile|null);setTopFile(state.topFile as ParsedSurveyFile|null);setTargetThicknessMm(target);setToleranceMm(tolerance);setThicknessRule(restoredThicknessRule);setCoordinateTolerance(distance);setMatchMode(state.matchMode as MatchMode);setError("")
         }}/>
 
         <Link
@@ -855,26 +865,27 @@ export default function PavementConformance() {
                     Conformance settings
                   </p>
                   <h2 className="mt-2 text-2xl font-semibold">
-                    Thickness and matching tolerances
+                    Thickness acceptance and point matching
                   </h2>
                   {isBottomSurface && <p className="mt-2 text-sm text-slate-400">Bottom RL comes from the selected TIN at each top/asbuilt point’s XY. Point-ID and nearest-point matching are not used.</p>}
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <label className="text-sm text-slate-300"><span className="mb-2 block">Thickness rule</span><select aria-label="Thickness acceptance rule" value={thicknessRule} onChange={(event) => setThicknessRule(event.target.value as ThicknessRule)} className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-white outline-none focus:border-cyan-400"><option value="minimum">Minimum only · no upper limit</option><option value="target-tolerance">Target ± tolerance</option></select></label>
                   <NumberControl
-                    label="Target thickness (mm)"
+                    label={thicknessRule === "minimum" ? "Minimum thickness (mm)" : "Target thickness (mm)"}
                     value={targetThicknessMm}
                     minimum={0}
                     step={1}
                     onChange={setTargetThicknessMm}
                   />
-                  <NumberControl
+                  {thicknessRule === "target-tolerance" && <NumberControl
                     label="Allowed ± (mm)"
                     value={toleranceMm}
                     minimum={0}
                     step={1}
                     onChange={setToleranceMm}
-                  />
+                  />}
                   {!isBottomSurface && <>
                   <NumberControl
                     label="XY tolerance (m)"
@@ -900,12 +911,13 @@ export default function PavementConformance() {
                   </>}
                 </div>
               </div>
+              <p className="mt-4 text-sm text-cyan-200">{thicknessAcceptanceLabel(targetThicknessMm, toleranceMm, thicknessRule)}. {thicknessRule === "minimum" ? "At or above the minimum passes; anything below fails." : "Thickness must fall within the target ± tolerance."} FSL point-level conformance uses its separate lower / upper tolerances above.</p>
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/5 p-5" aria-label="Thickness point filters">
               <div className="flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-xl font-semibold">Thickness point filters</h2><p className="mt-2 text-sm text-slate-400">Map, table, summary and report downloads follow this filter.</p></div><label className="text-sm text-slate-300">Filter cutoff (mm)<input aria-label="Thickness filter cutoff (mm)" type="number" min="0" step="1" value={cutoffMm} onChange={(event) => { if (Number.isFinite(event.target.valueAsNumber) && event.target.valueAsNumber >= 0) updateWorkspace({ cutoffMm: event.target.valueAsNumber }) }} className="ml-3 w-28 rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-white" /></label></div>
-              <div className="mt-4 flex flex-wrap gap-3">{([["all", "All points"], ["below", `Below ${cutoffMm} mm`], ["at-above", `At / above ${cutoffMm} mm`], ["outside", "Outside tolerance"], ...(isBottomSurface ? [["unassessed", "Unassessed"]] : [])] as Array<[ThicknessFilter, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={workspace.filter === value} onClick={() => updateWorkspace({ filter: value })} className={`rounded-full border px-4 py-2 text-sm ${workspace.filter === value ? "border-cyan-300 bg-cyan-300 text-slate-950" : "border-white/20 text-slate-300"}`}>{label}</button>)}{workspace.cutoffMm !== null && <button type="button" className="text-xs text-slate-400 underline" onClick={() => updateWorkspace({ cutoffMm: null })}>Follow target thickness</button>}</div>
-              <p className="mt-3 text-xs text-slate-400">Showing {(filteredResults.length + visibleUnassessed.length).toLocaleString()} of {(isBottomSurface ? topFile.points.length : comparison?.results.length ?? 0).toLocaleString()} {isBottomSurface ? "top/asbuilt points" : "matched points"}. {workspace.cutoffMm === null ? "Cutoff follows the target thickness." : "Custom cutoff; target and acceptance tolerance are unchanged."}</p>
+              <div className="mt-4 flex flex-wrap gap-3">{([["all", "All points"], ["below", `Below ${cutoffMm} mm`], ["at-above", `At / above ${cutoffMm} mm`], ["outside", thicknessRule === "minimum" ? "Below required minimum" : "Outside tolerance"], ...(isBottomSurface ? [["unassessed", "Unassessed"]] : [])] as Array<[ThicknessFilter, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={workspace.filter === value} onClick={() => updateWorkspace({ filter: value })} className={`rounded-full border px-4 py-2 text-sm ${workspace.filter === value ? "border-cyan-300 bg-cyan-300 text-slate-950" : "border-white/20 text-slate-300"}`}>{label}</button>)}{workspace.cutoffMm !== null && <button type="button" className="text-xs text-slate-400 underline" onClick={() => updateWorkspace({ cutoffMm: null })}>Follow required thickness</button>}</div>
+              <p className="mt-3 text-xs text-slate-400">Showing {(filteredResults.length + visibleUnassessed.length).toLocaleString()} of {(isBottomSurface ? topFile.points.length : comparison?.results.length ?? 0).toLocaleString()} {isBottomSurface ? "top/asbuilt points" : "matched points"}. {workspace.cutoffMm === null ? "Cutoff follows the required thickness." : "Custom filter cutoff; the thickness acceptance rule is unchanged."}</p>
             </section>
 
             {surfaceBusy ? <section role="status" className="rounded-3xl border border-cyan-300/20 bg-cyan-300/5 p-6 text-cyan-100">Checking top points against bottom TIN… {currentSurfaceWork?.percent ?? 0}%</section> : surfaceError ? <section role="alert" className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 text-amber-200">{surfaceError}</section> : comparison && (comparison.results.length > 0 || unassessed.length > 0) && statistics ? (
@@ -917,8 +929,7 @@ export default function PavementConformance() {
                         Thickness summary · current filter
                       </h2>
                       <p className="mt-2 text-sm text-slate-400">
-                        Acceptable range {Math.max(0, targetThicknessMm - toleranceMm).toFixed(0)}–
-                        {(targetThicknessMm + toleranceMm).toFixed(0)} mm
+                        {thicknessAcceptanceLabel(targetThicknessMm, toleranceMm, thicknessRule)}
                       </p>
                     </div>
                     <button
@@ -975,8 +986,8 @@ export default function PavementConformance() {
                 </section>
 
                 {unassessed.length > 0 && <p role="status" className="rounded-2xl border border-slate-400/20 bg-slate-400/5 p-4 text-sm text-slate-300">{unassessed.length.toLocaleString()} top point(s) have no reliable bottom TIN level and remain unassessed. Grey points are shown under All points or Unassessed; thickness filters exclude them.</p>}
-                <ConformanceMap unassessed={visibleUnassessed} bottomDocument={bottomDocument} results={filteredResults} settings={mapSettings} onChange={updateMapSettings} storageFailed={mapStorageFailed} workspace={workspace} onWorkspaceChange={updateWorkspace} document={selectedDocument} design={designState} targetMm={targetThicknessMm} toleranceMm={toleranceMm} scope={filterLabel} />
-                <ResultsTable results={filteredResults} unassessed={visibleUnassessed} />
+                <ConformanceMap unassessed={visibleUnassessed} bottomDocument={bottomDocument} results={filteredResults} settings={mapSettings} onChange={updateMapSettings} storageFailed={mapStorageFailed} workspace={workspace} onWorkspaceChange={updateWorkspace} document={selectedDocument} design={designState} targetMm={targetThicknessMm} toleranceMm={toleranceMm} thicknessRule={thicknessRule} scope={filterLabel} />
+                <ResultsTable results={filteredResults} unassessed={visibleUnassessed} thicknessRule={thicknessRule} />
               </>
             ) : (
               <section className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 text-amber-200">
@@ -1108,25 +1119,25 @@ function SummaryCard({
   )
 }
 
-function ConformanceMap({ unassessed, bottomDocument, results, settings, onChange, storageFailed, workspace, onWorkspaceChange, document, design, targetMm, toleranceMm, scope }: {
-  unassessed: UnassessedThicknessPoint[]; bottomDocument?: LandXmlDocument; results: ConformanceResult[]; settings: MapProjectSettings; onChange: (settings: MapProjectSettings) => void; storageFailed: boolean; workspace: PavementWorkspaceState; onWorkspaceChange: (patch: Partial<PavementWorkspaceState>) => void; document?: LandXmlDocument; design: PavementDesignState; targetMm: number; toleranceMm: number; scope: string
+function ConformanceMap({ unassessed, bottomDocument, results, settings, onChange, storageFailed, workspace, onWorkspaceChange, document, design, targetMm, toleranceMm, thicknessRule, scope }: {
+  unassessed: UnassessedThicknessPoint[]; bottomDocument?: LandXmlDocument; results: ConformanceResult[]; settings: MapProjectSettings; onChange: (settings: MapProjectSettings) => void; storageFailed: boolean; workspace: PavementWorkspaceState; onWorkspaceChange: (patch: Partial<PavementWorkspaceState>) => void; document?: LandXmlDocument; design: PavementDesignState; targetMm: number; toleranceMm: number; thicknessRule: ThicknessRule; scope: string
 }) {
   const [catalogue, setCatalogue] = useState<MapCrs[]>([]), [catalogueError, setCatalogueError] = useState(""), [retry, setRetry] = useState(0)
   useEffect(() => { let active = true; setCatalogueError(""); loadCrsCatalogue().then((value) => { if (active) setCatalogue(value) }).catch(() => { if (active) setCatalogueError("The coordinate-system catalogue could not load.") }); return () => { active = false } }, [retry])
   const crs = catalogue.find((entry) => entry.code === settings.defaultCrs)
-  const geometry = useMemo(() => buildPavementMapGeometry(results, toleranceMm, unassessed), [results, toleranceMm, unassessed])
-  const points = useMemo<PavementMeasurement[]>(() => [...results.map((row) => ({ id: row.id, easting: row.easting, northing: row.northing, elevation: row.topElevation, code: row.code, thicknessMm: row.thicknessMm, deviationMm: row.deviationMm, status: thicknessClass(row, toleranceMm), colour: pavementThicknessColours[thicknessClass(row, toleranceMm)], bottom: { easting: row.bottomEasting, northing: row.bottomNorthing, elevation: row.bottomElevation } })), ...unassessed.map((row) => ({ id: row.id, easting: row.easting, northing: row.northing, elevation: row.topElevation, code: row.code, status: `UNASSESSED · ${row.reason}`, colour: "#94a3b8" }))], [results, toleranceMm, unassessed])
+  const geometry = useMemo(() => buildPavementMapGeometry(results, toleranceMm, unassessed, thicknessRule), [results, toleranceMm, unassessed, thicknessRule])
+  const points = useMemo<PavementMeasurement[]>(() => [...results.map((row) => ({ id: row.id, easting: row.easting, northing: row.northing, elevation: row.topElevation, code: row.code, thicknessMm: row.thicknessMm, deviationMm: row.deviationMm, status: thicknessClass(row, toleranceMm, thicknessRule), colour: pavementThicknessColours[thicknessClass(row, toleranceMm, thicknessRule)], bottom: { easting: row.bottomEasting, northing: row.bottomNorthing, elevation: row.bottomElevation } })), ...unassessed.map((row) => ({ id: row.id, easting: row.easting, northing: row.northing, elevation: row.topElevation, code: row.code, status: `UNASSESSED · ${row.reason}`, colour: "#94a3b8" }))], [results, toleranceMm, unassessed, thicknessRule])
   return <section className="min-w-0 space-y-5 rounded-3xl border border-white/10 bg-white/5 p-5 md:p-6" aria-label="Pavement thickness map">
     <div className="flex flex-wrap items-center justify-between gap-4"><h2 className="text-2xl font-semibold">Thickness conformance map</h2><div className="flex flex-wrap gap-4 text-xs">{Object.entries(geometry.pointColours ?? pavementThicknessColours).map(([label, colour]) => <span key={label} className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: colour }} />{label}</span>)}</div></div>
-    <p className="text-sm text-slate-400">{scope}. Colour limits use target ± tolerance. Larger red dots indicate a greater thickness shortfall. Numbers show thickness in millimetres.</p>
+    <p className="text-sm text-slate-400">{scope}. {thicknessRule === "minimum" ? "Blue points meet or exceed the minimum; red points are below it. No upper thickness limit." : "Colour limits use target ± tolerance."} Larger red dots indicate a greater thickness shortfall. Numbers show thickness in millimetres.</p>
     <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"><CrsPicker label="Pavement survey (both files)" value={settings.defaultCrs} catalogue={catalogue} loading={!catalogue.length && !catalogueError} onChange={(code) => onChange({ ...settings, defaultCrs: code })} note="Choose the common metre survey grid used by the points, alignment, FSL and DXF strings. No input coordinates or heights are converted." /><div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4"><label className="block text-sm text-slate-300">Background<select aria-label="Pavement background" value={settings.basemap} onChange={(event) => onChange({ ...settings, basemap: event.target.value as Basemap })} className="mt-2 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-sm"><option value="street">Street map</option><option value="aerial">Aerial / satellite (Esri)</option><option value="none">Source-grid plan</option></select></label><label className="block text-xs text-slate-300">Point opacity · {settings.opacity}%<input aria-label="Pavement point opacity" type="range" min="0" max="100" value={settings.opacity} onChange={(event) => onChange({ ...settings, opacity: Number(event.target.value) })} className="mt-3 w-full accent-cyan-400" /></label><p className="text-xs text-slate-400">{storageFailed ? "Map preferences could not be saved on this device." : "Map preferences, DXF layers and filters are included in saved projects."}</p></div></div>
     {catalogueError && <p role="alert" className="text-sm text-amber-200">{catalogueError} <button type="button" className="underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></p>}
     {results.length === 0 && unassessed.length === 0 && <p role="status" className="text-sm text-amber-200">No points match this thickness filter. Choose All points or change the cutoff.</p>}
-    <PavementFieldMap geometry={geometry} document={document} bottomDocument={bottomDocument} points={points} settings={settings} crs={crs} state={workspace} onChange={onWorkspaceChange} alignmentName={design.alignmentName} interval={design.labelInterval} mode="thickness" scope={scope} datum={design.datum} criteria={{ targetMm, toleranceMm }} />
+    <PavementFieldMap geometry={geometry} document={document} bottomDocument={bottomDocument} points={points} settings={settings} crs={crs} state={workspace} onChange={onWorkspaceChange} alignmentName={design.alignmentName} interval={design.labelInterval} mode="thickness" scope={scope} datum={design.datum} criteria={{ targetMm, toleranceMm, thicknessRule }} />
   </section>
 }
 
-function ResultsTable({ results, unassessed }: { results: ConformanceResult[]; unassessed: UnassessedThicknessPoint[] }) {
+function ResultsTable({ results, unassessed, thicknessRule }: { results: ConformanceResult[]; unassessed: UnassessedThicknessPoint[]; thicknessRule: ThicknessRule }) {
   const rows = [...results.map((row) => ({ ...row, reason: "" })), ...unassessed.map((row) => ({ ...row, bottomElevation: null, thicknessMm: null, deviationMm: null, status: "unassessed" }))]
   const displayedResults = rows.slice(0, 500)
 
@@ -1142,6 +1153,7 @@ function ResultsTable({ results, unassessed }: { results: ConformanceResult[]; u
         <p className="mt-2 text-sm text-slate-400">
           Showing {displayedResults.length.toLocaleString("en-NZ")} of {" "}
           {rows.length.toLocaleString("en-NZ")} points in the current filter. Report downloads include every point in this filter.
+          {" "}Status uses unrounded thickness; displayed thicknesses are rounded to 0.1 mm.
         </p>
       </div>
 
@@ -1155,7 +1167,7 @@ function ResultsTable({ results, unassessed }: { results: ConformanceResult[]; u
               <TableHeader>Bottom RL</TableHeader>
               <TableHeader>Top RL</TableHeader>
               <TableHeader>Thickness</TableHeader>
-              <TableHeader>Deviation</TableHeader>
+              <TableHeader>{thicknessRule === "minimum" ? "Difference from minimum" : "Deviation from target"}</TableHeader>
               <TableHeader>Status</TableHeader>
             </tr>
           </thead>

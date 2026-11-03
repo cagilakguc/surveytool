@@ -6,9 +6,10 @@ import { createAlignmentProjector } from "./alignmentStationing"
 import { createTinSampler } from "./asBuiltConformance"
 import { pavementDesignUnitError } from "./pavementDesign"
 import { tinBoundarySectionFractions } from "./tinBoundaries"
+import type { ThicknessRule } from "./pavementThickness"
 
 export type PavementMeasurement = SurveyPoint & { colour: string; status: string; thicknessMm?: number; deviationMm?: number; bottom?: PlanPoint; designLevel?: number | null; differenceMm?: number | null }
-export type PavementSectionCriteria = { targetMm?: number; toleranceMm?: number; lowerMm?: number; upperMm?: number }
+export type PavementSectionCriteria = { targetMm?: number; toleranceMm?: number; thicknessRule?: ThicknessRule; lowerMm?: number; upperMm?: number }
 export type PavementSectionRequest = { line: SectionLine; corridor: number; points: PavementMeasurement[]; document?: LandXmlDocument; bottomDocument?: LandXmlDocument; alignmentName?: string; mode: "thickness" | "level"; scope: string; crs: string; datum: string; criteria?: PavementSectionCriteria }
 export type PavementSectionPoint = PavementMeasurement & { distance: number; offLine: number; chainage: number | null; bottomDistance: number | null; fslLevel: number | null; fslDifferenceMm: number | null }
 export type PavementSectionResult = { length: number; points: PavementSectionPoint[]; samples: Array<{ distance: number; level: number | null; bottomLevel?: number | null; chainage: number | null }>; startChainage: number | null; endChainage: number | null }
