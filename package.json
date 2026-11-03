@@ -22,7 +22,8 @@
     "test:usage": "node --import tsx scripts/validate-tool-usage.mjs",
     "test:gis-columns": "node --import tsx scripts/validate-gis-columns.mjs",
     "test:pavement": "node --import tsx scripts/validate-pavement-design.mjs",
-    "test:pavement-workspace": "node --import tsx scripts/validate-pavement-workspace.mjs"
+    "test:pavement-workspace": "node --import tsx scripts/validate-pavement-workspace.mjs",
+    "test:pavement-bottom": "node --import tsx scripts/validate-pavement-bottom-surface.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
