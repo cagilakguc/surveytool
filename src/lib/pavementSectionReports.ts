@@ -59,10 +59,13 @@ export async function pavementSectionPdf(request: PavementSectionRequest, result
   pdf.setFontSize(8)
   for (const segment of pavementSlopeLabelSegments(result)) {
     const a = result.points[segment.startIndex], b = result.points[segment.endIndex], midX = x((a.distance + b.distance) / 2)
-    const asbuiltY = Math.max(39, y((a.elevation + b.elevation) / 2) - 8)
-    const designY = segment.designStartLevel !== null && segment.designEndLevel !== null ? y((segment.designStartLevel + segment.designEndLevel) / 2) : y((a.elevation + b.elevation) / 2)
+    const asbuiltLineY = y((a.elevation + b.elevation) / 2)
+    const designLineY = segment.designStartLevel !== null && segment.designEndLevel !== null ? y((segment.designStartLevel + segment.designEndLevel) / 2) : asbuiltLineY
+    const designLabelY = Math.max(39, designLineY - 6), asbuiltLabelY = Math.min(152, asbuiltLineY + 8)
+    const separation = Math.max(0, (designLabelY + 6 - asbuiltLabelY) / 2)
+    const designY = Math.max(39, designLabelY - separation), asbuiltY = Math.min(152, asbuiltLabelY + separation)
+    pdf.setTextColor(8, 145, 178); pdf.text(`D avg ${formatPavementSlope(segment.designSlopePercent)}`, midX, designY, { align: "center" })
     pdf.setTextColor(194, 65, 12); pdf.text(`AB ${formatPavementSlope(segment.asbuiltSlopePercent)}`, midX, asbuiltY, { align: "center" })
-    pdf.setTextColor(8, 145, 178); pdf.text(`D avg ${formatPavementSlope(segment.designSlopePercent)}`, midX, Math.min(152, Math.max(asbuiltY + 6, designY + 6)), { align: "center" })
   }
   pdf.setFontSize(9); pdf.setTextColor(51, 65, 85); pdf.text("Distance along drawn line (m). RLs in metres; vertical scale exaggerated.", 25, 178)
   pdf.setFontSize(8); pdf.text(pdf.splitTextToSize(`Orange / AB: connected asbuilt profile and slope (%). Cyan / D avg: FSL design and interval average slope (%). Coloured dots: asbuilt check status; grey: bottom survey or TIN. Up to 1,000 measured dots; all asbuilt line segments. Slopes use real RLs and horizontal run; crowded labels are reduced. ${result.points.length ? "" : "No measured points fall inside this section corridor."}`, 246), 25, 184)
