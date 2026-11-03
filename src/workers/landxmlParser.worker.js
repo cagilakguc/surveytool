@@ -263,12 +263,32 @@ function parseSurface(block, index) {
       : Math.max(maxElevation, point.elevation)
   })
 
+  const boundaries = []
+  const boundaryExpression = /<(?:[\w.-]+:)?Boundary\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[\w.-]+:)?Boundary\s*>)/gi
+  let boundaryMatch
+  while ((boundaryMatch = boundaryExpression.exec(block.body)) !== null) {
+    const attributes = parseAttributes(boundaryMatch[1]), body = boundaryMatch[2] ?? ""
+    const lists2D = tagBlocks(body, "PntList2D"), lists3D = tagBlocks(body, "PntList3D")
+    const dimensions = lists3D.length ? 3 : 2
+    const text = (lists3D[0]?.body ?? lists2D[0]?.body ?? "").trim()
+    const values = text ? text.split(/[\s,]+/).map(Number) : []
+    const trim = attributes.edgeTrim?.trim().toLowerCase()
+    const error = lists2D.length + lists3D.length !== 1 || values.length < dimensions * 3 || values.length % dimensions || !values.every(Number.isFinite)
+      ? "A readable PntList2D or PntList3D polygon is required."
+      : trim !== undefined && trim !== "true" && trim !== "false" && trim !== "1" && trim !== "0"
+        ? "The edgeTrim value must be true or false." : undefined
+    const vertices = []
+    if (!error) for (let j = 0; j < values.length; j += dimensions) vertices.push({ northing: values[j], easting: values[j + 1], elevation: dimensions === 3 ? values[j + 2] : null })
+    boundaries.push({ name: attributes.name || `Boundary ${boundaries.length + 1}`, type: attributes.bndType?.trim().toLowerCase() ?? "", edgeTrim: trim !== "false" && trim !== "0", points: vertices, ...(error ? { error } : {}) })
+  }
+
   return {
     name: block.attributes.name ?? `Surface ${index + 1}`,
     points,
     faces,
     excludedFaces,
-    hasBoundaryDefinitions: tagBlocks(block.body, "Boundary").length > 0,
+    hasBoundaryDefinitions: boundaries.length > 0,
+    boundaries,
     minElevation,
     maxElevation,
   }

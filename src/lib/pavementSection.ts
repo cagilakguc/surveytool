@@ -5,6 +5,7 @@ import { projectPointToSection } from "./sectionOptions"
 import { createAlignmentProjector } from "./alignmentStationing"
 import { createTinSampler } from "./asBuiltConformance"
 import { pavementDesignUnitError } from "./pavementDesign"
+import { tinBoundarySectionFractions } from "./tinBoundaries"
 
 export type PavementMeasurement = SurveyPoint & { colour: string; status: string; thicknessMm?: number; deviationMm?: number; bottom?: PlanPoint; designLevel?: number | null; differenceMm?: number | null }
 export type PavementSectionCriteria = { targetMm?: number; toleranceMm?: number; lowerMm?: number; upperMm?: number }
@@ -34,8 +35,8 @@ export function analysePavementSection(request: PavementSectionRequest): Pavemen
     points.push({ ...point, distance: projected.distance, offLine: projected.offset, chainage: station?.(point).chainage ?? null, bottomDistance: bottom?.distance ?? null, fslLevel, fslDifferenceMm: fslLevel === null ? null : (point.elevation - fslLevel) * 1000 })
   }
   points.sort((a, b) => a.distance - b.distance)
-  const samples = Array.from({ length: 161 }, (_, index) => {
-    const t = index / 160
+  const fractions = [...new Set([...Array.from({ length: 161 }, (_, index) => index / 160), ...tinBoundarySectionFractions(surface, line.start, line.end), ...tinBoundarySectionFractions(bottomSurface, line.start, line.end)])].sort((a, b) => a - b)
+  const samples = fractions.map((t) => {
     const p = { easting: line.start.easting + (line.end.easting - line.start.easting) * t, northing: line.start.northing + (line.end.northing - line.start.northing) * t }
     return { distance: length * t, level: sampler?.find(p.easting, p.northing).level ?? null, bottomLevel: bottomSampler?.find(p.easting, p.northing).level ?? null, chainage: station?.(p).chainage ?? null }
   })
@@ -50,4 +51,12 @@ export function pavementSectionPlot(result: PavementSectionResult) {
   if (!Number.isFinite(minimum)) { minimum = 0; maximum = 1 }
   const padding = Math.max(.05, (maximum - minimum) * .15)
   return { minimum: minimum - padding, maximum: maximum + padding, x: (distance: number) => 85 + distance / result.length * 840, y: (level: number) => 390 - (level - minimum + padding) / (maximum - minimum + padding * 2) * 330 }
+}
+
+export function pavementSectionTicks(result: PavementSectionResult) {
+  return Array.from({ length: 6 }, (_, index) => {
+    const distance = result.length * index / 5
+    const sample = result.samples.find((item) => Math.abs(item.distance - distance) <= Math.max(1e-8, result.length * 1e-12))
+    return { distance, chainage: sample?.chainage ?? null }
+  })
 }

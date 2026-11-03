@@ -6,6 +6,14 @@ export type PlanPoint = {
 
 export type LandXmlFace = [string, string, string]
 
+export type LandXmlBoundary = {
+  name: string
+  type: string
+  edgeTrim: boolean
+  points: PlanPoint[]
+  error?: string
+}
+
 export type LandXmlSurface = {
   name: string
   points: Record<string, PlanPoint>
@@ -14,6 +22,7 @@ export type LandXmlSurface = {
   maxElevation: number | null
   excludedFaces?: number
   hasBoundaryDefinitions?: boolean
+  boundaries?: LandXmlBoundary[]
 }
 
 export type LandXmlAlignment = {
@@ -291,6 +300,21 @@ function parseSurface(surface: Element, index: number) {
         : Math.max(maxElevation, point.elevation)
   })
 
+  const boundaries = elementsByLocalName(surface, "Boundary").map((boundary, i): LandXmlBoundary => {
+    const lists = [...elementsByLocalName(boundary, "PntList2D"), ...elementsByLocalName(boundary, "PntList3D")]
+    const list = lists[0], dimensions = list?.localName === "PntList3D" ? 3 : 2
+    const text = list?.textContent?.trim() ?? ""
+    const values = text ? text.split(/[\s,]+/).map(Number) : []
+    const trim = boundary.getAttribute("edgeTrim")?.trim().toLowerCase()
+    const error = lists.length !== 1 || values.length < dimensions * 3 || values.length % dimensions || !values.every(Number.isFinite)
+      ? "A readable PntList2D or PntList3D polygon is required."
+      : trim !== undefined && trim !== "true" && trim !== "false" && trim !== "1" && trim !== "0"
+        ? "The edgeTrim value must be true or false." : undefined
+    const vertices: PlanPoint[] = []
+    if (!error) for (let j = 0; j < values.length; j += dimensions) vertices.push({ northing: values[j], easting: values[j + 1], elevation: dimensions === 3 ? values[j + 2] : null })
+    return { name: boundary.getAttribute("name") || `Boundary ${i + 1}`, type: boundary.getAttribute("bndType")?.trim().toLowerCase() ?? "", edgeTrim: trim !== "false" && trim !== "0", points: vertices, ...(error ? { error } : {}) }
+  })
+
   return {
     name:
       surface.getAttribute("name") ??
@@ -298,7 +322,8 @@ function parseSurface(surface: Element, index: number) {
     points,
     faces,
     excludedFaces: definition ? elementsByLocalName(definition, "F").filter((face) => face.getAttribute("i")?.trim() === "1").length : 0,
-    hasBoundaryDefinitions: elementsByLocalName(surface, "Boundary").length > 0,
+    hasBoundaryDefinitions: boundaries.length > 0,
+    boundaries,
     minElevation,
     maxElevation,
   } satisfies LandXmlSurface

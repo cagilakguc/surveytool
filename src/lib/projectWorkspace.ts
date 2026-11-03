@@ -85,6 +85,19 @@ export function assertDocument(
         face.some((id) => typeof id !== "string")
       )
         throw new Error("Invalid saved TIN face.");
+    if (surface.boundaries !== undefined) {
+      if (!Array.isArray(surface.boundaries) || surface.boundaries.length > 5_000) throw new Error("Invalid saved surface boundaries.");
+      for (const rawBoundary of surface.boundaries) {
+        const boundary = record(rawBoundary);
+        if (typeof boundary.name !== "string" || typeof boundary.type !== "string" || typeof boundary.edgeTrim !== "boolean" || !Array.isArray(boundary.points) || (boundary.error !== undefined && typeof boundary.error !== "string")) throw new Error("Invalid saved surface boundary.");
+        pointCount += boundary.points.length;
+        if (pointCount > 2_000_000) throw new Error("The saved surface exceeds the workspace limits.");
+        for (const raw of boundary.points) {
+          const point = record(raw);
+          if (!Number.isFinite(point.easting) || !Number.isFinite(point.northing) || (point.elevation !== null && !Number.isFinite(point.elevation))) throw new Error("Invalid saved boundary coordinates.");
+        }
+      }
+    }
   }
   for (const raw of doc.alignments) {
     const line = record(raw);

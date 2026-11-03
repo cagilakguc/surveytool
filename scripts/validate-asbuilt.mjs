@@ -168,7 +168,7 @@ assert.throws(
       hasBoundaryDefinitions: true,
       excludedFaces: 0,
     }),
-  /boundary instructions/,
+  /Re-upload.*LandXML.*boundary polygons/,
 );
 
 const document = {

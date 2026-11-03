@@ -2,6 +2,7 @@ import type { LandXmlSurface, PlanPoint } from "./landxml";
 import type { SurveyPoint, SurveyPointLayer } from "./surveyPoints";
 import type { MapCrs } from "./mapCoordinates";
 import { createGlobalCoordinateTransform } from "./globalGis";
+import { createTinBoundaryFilter } from "./tinBoundaries";
 
 export const maximumCheckPoints = 250_000;
 export const maximumCheckFaces = 500_000;
@@ -72,10 +73,7 @@ type Triangle = {
   maxN: number;
 };
 export function createTinSampler(surface: LandXmlSurface) {
-  if (surface.hasBoundaryDefinitions && !surface.excludedFaces)
-    throw new Error(
-      "This surface contains boundary instructions without excluded TIN faces. Clip the TIN or export its visible triangles before checking; boundary-only polygons are not applied automatically.",
-    );
+  const boundaryFilter = createTinBoundaryFilter(surface);
   if (surface.faces.length > maximumCheckFaces)
     throw new Error(
       `Clip or simplify the design TIN to ${maximumCheckFaces.toLocaleString()} faces or fewer before checking.`,
@@ -179,6 +177,7 @@ export function createTinSampler(surface: LandXmlSurface) {
           wc = (t.bx * py - t.by * px) / t.denominator,
           wa = 1 - wb - wc;
         if (Math.min(wa, wb, wc) < -1e-10) continue;
+        if (boundaryFilter && !boundaryFilter(t, e, n)) continue;
         if (
           ![t.a.elevation, t.b.elevation, t.c.elevation].every(
             (z) => typeof z === "number" && Number.isFinite(z),

@@ -1,5 +1,5 @@
 import type { PavementSectionRequest, PavementSectionResult } from "./pavementSection"
-import { pavementSectionPlot } from "./pavementSection"
+import { pavementSectionPlot, pavementSectionTicks } from "./pavementSection"
 import { formatChainage } from "./alignmentStationing"
 import { createReportCsv, reportFont } from "./surveyReports"
 import type { SurveyReport } from "./surveyReports"
@@ -29,12 +29,11 @@ export async function pavementSectionPdf(request: PavementSectionRequest, result
   const x = (d: number) => 25 + d / result.length * 246
   const y = (z: number) => 155 - (z - plot.minimum) / (plot.maximum - plot.minimum) * 120
   pdf.setFontSize(8)
-  for (let i = 0; i <= 5; i++) {
-    const d = i / 5 * result.length, z = plot.minimum + i / 5 * (plot.maximum - plot.minimum)
+  for (const [i, tick] of pavementSectionTicks(result).entries()) {
+    const d = tick.distance, z = plot.minimum + i / 5 * (plot.maximum - plot.minimum)
     pdf.setDrawColor(218, 225, 235); pdf.setLineWidth(.15); pdf.line(x(d), 35, x(d), 155); pdf.line(25, y(z), 271, y(z))
     pdf.setTextColor(51, 65, 85); pdf.text(d.toFixed(2), x(d), 161, { align: "center" }); pdf.text(z.toFixed(3), 22, y(z) + 1, { align: "right" })
-    const sample = result.samples[Math.round(i / 5 * 160)]
-    if (sample.chainage !== null) { pdf.setFontSize(7); pdf.text(`CH ${formatChainage(sample.chainage)}`, x(d), 168, { align: "center" }); pdf.setFontSize(8) }
+    if (tick.chainage !== null) { pdf.setFontSize(7); pdf.text(`CH ${formatChainage(tick.chainage)}`, x(d), 168, { align: "center" }); pdf.setFontSize(8) }
   }
   pdf.setDrawColor(8, 145, 178); pdf.setLineWidth(.7)
   for (let i = 1; i < result.samples.length; i++) { const a = result.samples[i - 1], b = result.samples[i]; if (a.level !== null && b.level !== null) pdf.line(x(a.distance), y(a.level), x(b.distance), y(b.level)) }

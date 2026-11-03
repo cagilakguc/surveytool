@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { PavementSectionRequest, PavementSectionResult } from "../lib/pavementSection"
-import { pavementSectionPlot } from "../lib/pavementSection"
+import { pavementSectionPlot, pavementSectionTicks } from "../lib/pavementSection"
 import { formatChainage } from "../lib/alignmentStationing"
 import { downloadReportBlob } from "../lib/surveyReports"
 
@@ -42,9 +42,8 @@ export default function PavementSectionDialog({ request, onClose }: { request: P
       {!result && !error && <p role="status" className="mt-6 text-cyan-200">Creating section…</p>}
       {result && plot && <>
         <svg viewBox="0 0 1000 475" role="img" aria-label="Pavement section profile showing FSL, measured levels and chainages" className="mt-5 block w-full rounded-2xl border border-white/10 bg-slate-900/40">
-          {Array.from({ length: 6 }, (_, i) => {
-            const distance = result.length * i / 5, level = plot.minimum + (plot.maximum - plot.minimum) * i / 5
-            const ch = result.samples[Math.round(i / 5 * 160)].chainage
+          {pavementSectionTicks(result).map(({ distance, chainage: ch }, i) => {
+            const level = plot.minimum + (plot.maximum - plot.minimum) * i / 5
             return <g key={i} fontSize="11" fill="#94a3b8"><line x1={plot.x(distance)} x2={plot.x(distance)} y1="60" y2="390" stroke="#334155" /><line x1="85" x2="925" y1={plot.y(level)} y2={plot.y(level)} stroke="#334155" /><text x="76" y={plot.y(level) + 4} textAnchor="end">{level.toFixed(3)}</text><text x={plot.x(distance)} y="410" textAnchor="middle">{distance.toFixed(2)} m</text>{ch !== null && <text x={plot.x(distance)} y="429" textAnchor="middle" fill="#facc15">CH {formatChainage(ch)}</text>}</g>
           })}
           {result.samples.slice(1).map((sample, i) => sample.level !== null && result.samples[i].level !== null ? <line key={i} x1={plot.x(result.samples[i].distance)} y1={plot.y(result.samples[i].level!)} x2={plot.x(sample.distance)} y2={plot.y(sample.level)} stroke="#22d3ee" strokeWidth="2.5" /> : null)}
