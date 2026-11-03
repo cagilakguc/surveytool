@@ -34,22 +34,28 @@ export function buildGisMapData(crs: MapCrs, layer: SurveyGeometryLayer): Survey
     for (const coordinate of [project(e, minN), project(e, maxN), project(minE, n), project(maxE, n)]) extendCoordinate(extent, coordinate)
   }
   function coordinates(vertices: SurveyVertex[]) { return vertices.map((vertex) => project(vertex.easting, vertex.northing)) }
-  function canDraw(vertices: number) {
-    if (features.length >= featureLimit || drawnVertices + vertices > vertexLimit) return false
+  const pointReserve = layer.groupGeometryByCode ? Math.min(layer.points.length, 4000) : 0
+  function canDraw(vertices: number, point = false) {
+    if (features.length >= featureLimit - (point ? 0 : pointReserve) || drawnVertices + vertices > vertexLimit - (point ? 0 : pointReserve)) return false
     drawnVertices += vertices
     return true
   }
   const total = layer.points.length + layer.lines.length + layer.polygons.length
-  if (layer.polygons.length) groups.push({ id: "gis-polygons", label: `Polygons (${layer.polygons.length.toLocaleString()})`, colour: layer.polygonColour ?? "#60a5fa" })
+  function codeGroup(code: string) {
+    const id = `status-${code}`, colour = layer.pointColours?.[code] ?? layer.lineColour ?? "#a78bfa"
+    if (!groups.some((group) => group.id === id)) groups.push({ id, label: code, colour })
+    return { group: id, colour }
+  }
+  if (layer.polygons.length && !layer.groupGeometryByCode) groups.push({ id: "gis-polygons", label: `Polygons (${layer.polygons.length.toLocaleString()})`, colour: layer.polygonColour ?? "#60a5fa" })
   for (const polygon of layer.polygons) {
     const count = polygon.rings.reduce((sum, ring) => sum + ring.length, 0)
     if (!canDraw(count)) continue
-    features.push(new Feature({ geometry: new Polygon(polygon.rings.map(coordinates)), group: "gis-polygons", colour: layer.polygonColour ?? "#60a5fa", name: `${polygon.id}${polygon.code ? ` · ${polygon.code}` : ""}` }))
+    features.push(new Feature({ geometry: new Polygon(polygon.rings.map(coordinates)), ...(layer.groupGeometryByCode ? codeGroup(polygon.code) : { group: "gis-polygons", colour: layer.polygonColour ?? "#60a5fa" }), name: `${polygon.id}${polygon.code ? ` · ${polygon.code}` : ""}` }))
   }
-  if (layer.lines.length) groups.push({ id: "gis-lines", label: `Lines (${layer.lines.length.toLocaleString()})`, colour: layer.lineColour ?? "#fbbf24" })
+  if (layer.lines.length && !layer.groupGeometryByCode) groups.push({ id: "gis-lines", label: `Lines (${layer.lines.length.toLocaleString()})`, colour: layer.lineColour ?? "#fbbf24" })
   for (const line of layer.lines) {
     if (!canDraw(line.vertices.length)) continue
-    features.push(new Feature({ geometry: new LineString(coordinates(line.vertices)), group: "gis-lines", colour: layer.lineColour ?? "#fbbf24", name: `${line.id}${line.code ? ` · ${line.code}` : ""}` }))
+    features.push(new Feature({ geometry: new LineString(coordinates(line.vertices)), ...(layer.groupGeometryByCode ? codeGroup(line.code) : { group: "gis-lines", colour: layer.lineColour ?? "#fbbf24" }), name: `${line.id}${line.code ? ` · ${line.code}` : ""}` }))
   }
   if (layer.points.length) groups.push({ id: "gis-points", label: `Points (${layer.points.length.toLocaleString()})`, colour: "#22d3ee" })
   let previewIndices: number[] | null = null
@@ -64,14 +70,14 @@ export function buildGisMapData(crs: MapCrs, layer: SurveyGeometryLayer): Survey
   }
   for (const pointIndex of previewIndices ?? layer.points.keys()) {
     const point = layer.points[pointIndex]
-    if (!canDraw(1)) continue
+    if (!canDraw(1, true)) continue
     features.push(new Feature({ geometry: new Point(project(point.easting, point.northing)), group: layer.pointColours ? `status-${point.code}` : "gis-points", colour: layer.pointColours?.[point.code] ?? "#22d3ee", name: `${point.id}${point.code ? ` · ${point.code}` : ""}`, ...point }))
   }
   if (!features.length) throw new Error("The geometry is too large for the bounded map preview. All features remain available for export.")
   if (layer.pointColours) {
     const pointGroup = groups.findIndex((group) => group.id === "gis-points")
     if (pointGroup >= 0) groups.splice(pointGroup, 1)
-    for (const [status, colour] of Object.entries(layer.pointColours)) groups.push({ id: `status-${status}`, label: status, colour })
+    for (const [status, colour] of Object.entries(layer.pointColours)) if (!groups.some((group) => group.id === `status-${status}`)) groups.push({ id: `status-${status}`, label: status, colour })
   }
   return { features, extent, groups, note: features.length < total ? `Map preview: ${features.length.toLocaleString()} of ${total.toLocaleString()} complete features. Export retains every feature and vertex.` : "" }
 }

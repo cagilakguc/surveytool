@@ -8,6 +8,7 @@ import type { SurveyGeometryLayer } from "./surveyGeometry"
 import type { SurveyReport } from "./surveyReports"
 import { metresPerLinearUnit } from "./mapCoordinates"
 import { assertDocument, record } from "./projectWorkspace"
+export const pavementLevelColours: typeof statusColours = { ...statusColours, PASS: "#38bdf8", LOW: "#ef4444", HIGH: "#f59e0b" }
 
 export type PavementDesignState = {
   alignmentDocument: LandXmlDocument | null
@@ -62,13 +63,13 @@ export function pavementDesignMapGeometry(points: SurveyPoint[], result: Pavemen
   const rows = result?.rows ?? points
   const step = Math.max(1, Math.ceil(rows.length / 5000))
   const usedStatuses = new Set(result ? result.rows.map((row) => row.status) : ["ASBUILT"])
-  const colours: Record<string, string> = { ...statusColours, ASBUILT: "#22d3ee" }
+  const colours: Record<string, string> = { ...pavementLevelColours, ASBUILT: "#22d3ee" }
   return { name: "Asbuilt vs FSL", format: "CSV", warnings: [], lines: [], polygons: [], pointColours: Object.fromEntries([...usedStatuses].map((status) => [status, colours[status]])),
     points: rows.filter((_, index) => index % step === 0).map((point) => {
       const row = "status" in point ? point as PavementDesignRow : null
       const station = row?.chainage != null ? ` · CH ${formatChainage(row.chainage)} · ${Math.abs(row.offset!).toFixed(3)} m ${row.offset! < 0 ? "R" : "L"}` : ""
       const levels = row ? ` · FSL ${row.designLevel?.toFixed(3) ?? "unavailable"} · Δ ${row.differenceMm?.toFixed(1) ?? "—"} mm · ${row.status}` : ""
-      return { ...point, id: `${point.id}${station}${levels}`, code: row?.status ?? "ASBUILT" }
+      return { ...point, id: `${point.id}${station}${levels}`, code: row?.status ?? "ASBUILT", label: row?.differenceMm == null ? undefined : `${row.differenceMm >= 0 ? "+" : ""}${row.differenceMm.toFixed(0)}` }
     }) }
 }
 
@@ -80,5 +81,5 @@ export function pavementDesignReport(result: PavementDesignResult, state: Paveme
     columns: ["Point ID", "Easting", "Northing", "Chainage (m)", "Chainage label", "Offset (m, +L / -R)", "Asbuilt RL", "FSL RL", "Difference (mm)", "FSL status", "Chainage status", "Code"],
     rows: result.rows.map((row) => [row.id, row.easting, row.northing, row.chainage, row.chainage === null ? null : formatChainage(row.chainage), row.offset, row.elevation, row.designLevel, row.differenceMm, row.status, row.stationStatus, row.code]),
     notes: ["FSL RL is interpolated from the selected TIN at each asbuilt point's original Easting/Northing. Difference = asbuilt RL − FSL RL; positive is high. No datum or coordinate conversion is applied.", "Offsets are positive left and negative right in the direction of increasing chainage. No chainage is extrapolated beyond the alignment endpoints. FSL assessment remains independent of alignment coverage.", "Outside, missing, ambiguous and invalid design levels are unassessed. Background imagery is for location context and is not included in this report.", ...(result.rejectedFaces ? [`Ignored ${result.rejectedFaces} invalid or degenerate TIN faces.`] : []), ...warnings],
-    plot: { points: result.rows.filter((row) => Number.isFinite(row.easting) && Number.isFinite(row.northing)).map((row) => ({ easting: row.easting, northing: row.northing, colour: statusColours[row.status] })), legend: Object.fromEntries([...new Set(result.rows.map((row) => row.status))].map((status) => [status, statusColours[status]])) } }
+    plot: { points: result.rows.filter((row) => Number.isFinite(row.easting) && Number.isFinite(row.northing)).map((row) => ({ easting: row.easting, northing: row.northing, colour: pavementLevelColours[row.status], label: row.differenceMm == null ? undefined : `${row.differenceMm.toFixed(0)} mm` })), legend: Object.fromEntries([...new Set(result.rows.map((row) => row.status))].map((status) => [status, pavementLevelColours[status]])) } }
 }

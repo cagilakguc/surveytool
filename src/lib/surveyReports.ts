@@ -1,7 +1,8 @@
 export type ReportCell = string | number | null;
 export type ReportPlot = {
-  points: Array<{ easting: number; northing: number; colour: string }>;
+  points: Array<{ easting: number; northing: number; colour: string; label?: string }>;
   legend: Record<string, string>;
+  lines?: Array<{ points: Array<{ easting: number; northing: number }>; colour: string }>;
 };
 export type SurveyReport = {
   title: string;
@@ -201,7 +202,7 @@ export async function createReportPdf(report: SurveyReport) {
     columnStyles: { 0: { cellWidth: 65 } },
     margin: { left: margin, right: margin, bottom: 15 },
   });
-  if (report.plot?.points.length) {
+  if (report.plot && (report.plot.points.length || report.plot.lines?.length)) {
     doc.addPage();
     doc.setFontSize(14);
     doc.text("Plan view — results in the design grid", margin, 18);
@@ -218,6 +219,11 @@ export async function createReportPdf(report: SurveyReport) {
       minN = Math.min(minN, p.northing);
       maxN = Math.max(maxN, p.northing);
     });
+    for (const line of report.plot.lines ?? []) for (const point of line.points) {
+      if (!Number.isFinite(point.easting) || !Number.isFinite(point.northing)) continue;
+      minE = Math.min(minE, point.easting); maxE = Math.max(maxE, point.easting);
+      minN = Math.min(minN, point.northing); maxN = Math.max(maxN, point.northing);
+    }
     const width = 242,
       height = 140,
       scale = Math.min(
@@ -228,16 +234,31 @@ export async function createReportPdf(report: SurveyReport) {
       y = 32;
     doc.setDrawColor(203, 213, 225);
     doc.rect(x, y, width, height);
+    const offsetE = (width - (maxE - minE) * scale) / 2, offsetN = (height - (maxN - minN) * scale) / 2;
+    let lineSegments = 0;
+    for (const line of report.plot.lines ?? []) {
+      doc.setDrawColor(line.colour); doc.setLineWidth(0.25);
+      for (let i = 1; i < line.points.length && lineSegments < 10000; i++) {
+        const a = line.points[i - 1], b = line.points[i];
+        if (![a.easting, a.northing, b.easting, b.northing].every(Number.isFinite)) continue;
+        doc.line(x + offsetE + (a.easting - minE) * scale, y + height - offsetN - (a.northing - minN) * scale, x + offsetE + (b.easting - minE) * scale, y + height - offsetN - (b.northing - minN) * scale); lineSegments++;
+      }
+    }
     const step = Math.max(1, Math.ceil(finite.length / 3000));
     finite.forEach((p, index) => {
       if (index % step) return;
       doc.setFillColor(p.colour);
       doc.circle(
-        x + (p.easting - minE) * scale,
-        y + height - (p.northing - minN) * scale,
+        x + offsetE + (p.easting - minE) * scale,
+        y + height - offsetN - (p.northing - minN) * scale,
         0.65,
         "F",
       );
+      if (p.label && finite.length <= 120) {
+        doc.setFontSize(7); doc.setTextColor(51, 65, 85);
+        const right = (p.easting - minE) * scale > width - 20;
+        doc.text(p.label, x + offsetE + (p.easting - minE) * scale + (right ? -1 : 1), y + height - offsetN - (p.northing - minN) * scale - 1, { align: right ? "right" : "left" });
+      }
     });
     doc.setFontSize(8);
     doc.setTextColor(51, 65, 85);
@@ -251,12 +272,15 @@ export async function createReportPdf(report: SurveyReport) {
       x,
       187,
     );
-    let legendX = x;
+    let legendX = x, legendY = 193;
     for (const [label, colour] of Object.entries(report.plot.legend)) {
+      const labelWidth = doc.getTextWidth(label) + 9;
+      if (legendX + labelWidth > x + width) { legendX = x; legendY += 5; }
+      if (legendY > 198) break;
       doc.setFillColor(colour);
-      doc.circle(legendX, 193, 1, "F");
-      doc.text(label, legendX + 3, 194);
-      legendX += label.length * 1.8 + 10;
+      doc.circle(legendX, legendY, 1, "F");
+      doc.text(label, legendX + 3, legendY + 1);
+      legendX += labelWidth;
     }
   }
   doc.addPage();

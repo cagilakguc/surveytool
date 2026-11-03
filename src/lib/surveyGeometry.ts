@@ -24,13 +24,14 @@ export type SurveyPolygonFeature = {
 export type SurveyGeometryLayer = {
   name: string
   format: "CSV" | "TXT" | "DXF"
-  points: SurveyPoint[]
+  points: Array<SurveyPoint & { label?: string; radius?: number }>
   lines: SurveyLineFeature[]
   polygons: SurveyPolygonFeature[]
   warnings: string[]
   pointColours?: Record<string, string>
   lineColour?: string
   polygonColour?: string
+  groupGeometryByCode?: boolean
 }
 
 type DxfPair = {

@@ -29,29 +29,34 @@ import { alignmentChainageMarkers } from "../lib/alignmentStationing"
 import "ol/ol.css"
 import "./SurveyMap.css"
 
-type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string; chainageInterval?: number; fullDetail?: boolean }
+type SurveyMapProps = { crs: MapCrs; basemap: Basemap | "google"; opacity: number; document?: LandXmlDocument; comparison?: SurfaceComparison; geometry?: SurveyGeometryLayer; geometryContext?: "survey" | "export"; heightUnitLabel?: string; fallback?: ReactNode; onSectionDraw?: (line: SectionLine) => void; sectionLine?: SectionLine | null; sectionLines?: SectionLine[]; selectedAlignmentName?: string; chainageInterval?: number; fullDetail?: boolean; pointLabels?: boolean; hiddenGeometryGroups?: string[]; onGroupVisibilityChange?: (group: string, visible: boolean) => void }
 type Hover = { name: string; easting?: number; northing?: number; elevation?: number; difference?: number; coordinateLabel?: string }
 
-function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>, edges = false) {
+function featureStyle(feature: FeatureLike, cache: globalThis.Map<string, Style>, edges = false, labels = false) {
   const group = feature.get("group") as string
   const colour = feature.get("colour") as string ?? "#22d3ee"
   const difference = feature.get("difference") as number | undefined
   const intensity = feature.get("intensity") as number ?? 0
-  const key = difference === undefined ? `${group}-${feature.getGeometry()?.getType()}-${feature.get("surfaceBand") ?? ""}-${edges}` : `${difference < 0 ? "cut" : "fill"}-${intensity}`
+  const label = labels ? feature.get("label") as string | undefined : undefined
+  const radius = Number(feature.get("radius")) || 4
+  const key = difference === undefined ? `${group}-${colour}-${radius}-${label ?? ""}-${feature.getGeometry()?.getType()}-${feature.get("surfaceBand") ?? ""}-${edges}` : `${difference < 0 ? "cut" : "fill"}-${intensity}`
   let style = cache.get(key)
   if (!style) {
     const fill = feature.get("completeSurface") ? colour : difference === undefined ? `${colour}35` : `rgba(${difference < 0 ? "251,113,133" : "34,211,238"},${0.25 + intensity / 30 * 0.75})`
     style = new Style({
       fill: new Fill({ color: fill }),
       stroke: feature.get("completeSurface") && !edges ? undefined : new Stroke({ color: feature.get("completeSurface") ? "#10203099" : difference === undefined ? colour : fill, width: feature.get("completeSurface") ? 0.65 : group === "alignments" || group === "gis-lines" ? 3 : 1 }),
-      image: new CircleStyle({ radius: 4, fill: new Fill({ color: colour }), stroke: new Stroke({ color: "#07111f", width: 1.5 }) }),
+      image: new CircleStyle({ radius, declutterMode: "none", fill: new Fill({ color: colour }), stroke: new Stroke({ color: "#07111f", width: 1.5 }) }),
+      text: label ? new Text({ text: label, offsetX: radius + 6, offsetY: 12, font: "bold 11px sans-serif", fill: new Fill({ color: "#ffffff" }), stroke: new Stroke({ color: "#020617", width: 3 }) }) : undefined,
     })
     cache.set(key, style)
   }
   return style
 }
 
-export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName, chainageInterval = 10, fullDetail = false }: SurveyMapProps) {
+export default function SurveyMap({ crs, basemap, opacity, document, comparison, geometry, geometryContext = "export", heightUnitLabel, fallback, onSectionDraw, sectionLine, sectionLines, selectedAlignmentName, chainageInterval = 10, fullDetail = false, pointLabels = false, hiddenGeometryGroups, onGroupVisibilityChange }: SurveyMapProps) {
+  const labelsRef = useRef(pointLabels)
+  labelsRef.current = pointLabels
   const [showTinEdges, setShowTinEdges] = useState(false)
   const edgesRef = useRef(false)
   edgesRef.current = showTinEdges
@@ -98,7 +103,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
     if (!target.current || !canRender) return
     try {
       const cache = new globalThis.Map<string, Style>()
-      const vector = new VectorLayer({ source: new VectorSource(), style: (feature) => hiddenGroups.current.has(feature.get("group")) ? undefined : featureStyle(feature, cache, edgesRef.current) })
+      const vector = new VectorLayer({ source: new VectorSource(), declutter: true, style: (feature, resolution) => hiddenGroups.current.has(feature.get("group")) ? undefined : featureStyle(feature, cache, edgesRef.current, labelsRef.current && resolution < 3) })
       const background = new LayerGroup()
       const sections = new VectorSource()
       const sectionLayer = new VectorLayer({ source: sections, style: (feature) => new Style({ stroke: new Stroke({ color: feature.get("active") ? "#fb7185" : "#fbbf24", width: feature.get("active") ? 4 : 1.5, lineDash: feature.get("active") ? [10, 6] : undefined }) }) })
@@ -191,6 +196,13 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
   }, [document, crs, showChainages, selectedAlignmentName, chainageInterval, canRender])
 
   useEffect(() => { vectorRef.current?.setOpacity(opacity / 100) }, [opacity, data])
+  useEffect(() => { vectorRef.current?.changed() }, [pointLabels])
+  useEffect(() => {
+    const next = new Set(hiddenGroups.current)
+    for (const key of next) if (String(key).startsWith("status-DXF ")) next.delete(key)
+    for (const key of hiddenGeometryGroups ?? []) next.add(key)
+    hiddenGroups.current = next; setHidden(next); vectorRef.current?.changed()
+  }, [hiddenGeometryGroups, data])
 
   useEffect(() => {
     const source = sectionSourceRef.current
@@ -290,6 +302,7 @@ export default function SurveyMap({ crs, basemap, opacity, document, comparison,
           hiddenGroups.current = next
           setHidden(next)
           vectorRef.current?.changed()
+          onGroupVisibilityChange?.(group.id, event.target.checked)
         }} className="accent-cyan-400" /><span style={{ color: group.colour }}>{group.label}</span></label>)}</div>}
         {data.value?.note && <p>{data.value.note}</p>}
         {crs.note && <p className="text-amber-200">{crs.note}</p>}

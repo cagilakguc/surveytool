@@ -1,25 +1,28 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { LandXmlDocument } from "../lib/landxml"
 import type { SurveyPoint } from "../lib/surveyPoints"
 import type { MapCrs, MapProjectSettings, Basemap } from "../lib/mapCoordinates"
 import { loadCrsCatalogue } from "../lib/mapCoordinates"
-import { pavementMapCoordinateError } from "../lib/pavementMap"
+import { pavementMapCoordinateError, pavementReportLines, withPavementDxf } from "../lib/pavementMap"
+import type { PavementWorkspaceState } from "../lib/pavementMap"
+import type { PavementMeasurement } from "../lib/pavementSection"
+import PavementFieldMap from "./PavementFieldMap"
 import { horizontalAlignment } from "../lib/alignmentGeometry"
 import { alignmentChainageMarkers, formatChainage } from "../lib/alignmentStationing"
 import { parseLandXmlFile } from "../lib/landxmlAsync"
-import { pavementDesignMapGeometry, pavementDesignReport, pavementDesignUnitError } from "../lib/pavementDesign"
+import { pavementDesignMapGeometry, pavementDesignReport, pavementDesignUnitError, pavementLevelColours } from "../lib/pavementDesign"
 import type { PavementDesignResult, PavementDesignState } from "../lib/pavementDesign"
-import { statusColours } from "../lib/asBuiltConformance"
 import { trackToolAction } from "../lib/toolUsage"
 import CrsPicker from "./CrsPicker"
 import ReportDownloads from "./ReportDownloads"
 
-const SurveyMap = lazy(() => import("./SurveyMap"))
 const inputClass = "mt-2 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400"
 const buttonClass = "rounded-full border border-cyan-300/30 bg-cyan-300/5 px-4 py-2.5 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/15 disabled:opacity-40"
 type MeasuredFile = { name: string; points: SurveyPoint[]; warnings: string[] }
 
-export default function PavementDesignPanel({ state, onChange, measured, mapSettings, onMapChange }: {
+export default function PavementDesignPanel({ state, onChange, measured, mapSettings, onMapChange, workspace, onWorkspaceChange }: {
+  workspace: PavementWorkspaceState
+  onWorkspaceChange: (patch: Partial<PavementWorkspaceState>) => void
   state: PavementDesignState
   onChange: (state: PavementDesignState) => void
   measured: MeasuredFile | null
@@ -60,7 +63,13 @@ export default function PavementDesignPanel({ state, onChange, measured, mapSett
   }, [alignment, state.labelInterval])
   const geometry = useMemo(() => pavementDesignMapGeometry(measured?.points ?? [], result), [measured, result])
   const warnings = [...(measured?.warnings ?? []), ...(state.alignmentDocument?.warnings ?? []), ...(state.fslDocument?.warnings ?? [])]
-  const report = useMemo(() => result && measured ? pavementDesignReport(result, state, measured.name, mapSettings.defaultCrs, [...measured.warnings, ...(state.alignmentDocument?.warnings ?? []), ...(state.fslDocument?.warnings ?? [])]) : null, [result, measured, state, mapSettings.defaultCrs])
+  const sectionPoints = useMemo<PavementMeasurement[]>(() => result ? result.rows.map((row) => ({ ...row, colour: pavementLevelColours[row.status] })) : (measured?.points ?? []).map((point) => ({ ...point, colour: "#22d3ee", status: "NOT ASSESSED" })), [result, measured])
+  const report = useMemo(() => {
+    if (!result || !measured) return null
+    const base = pavementDesignReport(result, state, measured.name, mapSettings.defaultCrs, [...measured.warnings, ...(state.alignmentDocument?.warnings ?? []), ...(state.fslDocument?.warnings ?? [])])
+    const overlay = withPavementDxf({ name: "Reference", format: "DXF", points: [], lines: [], polygons: [], warnings: [] }, workspace.overlays, workspace.hiddenLayers)
+    return { ...base, metadata: [...base.metadata, ["DXF reference files", workspace.overlays.map((layer) => layer.name).join("; ") || "None"] as [string, string]], plot: base.plot ? { ...base.plot, lines: pavementReportLines(overlay) } : undefined }
+  }, [result, measured, state, mapSettings.defaultCrs, workspace.overlays, workspace.hiddenLayers])
   const summary = useMemo(() => {
     let assessed = 0, passed = 0, beyondEnds = 0
     for (const row of result?.rows ?? []) {
@@ -135,7 +144,6 @@ export default function PavementDesignPanel({ state, onChange, measured, mapSett
   }
   function patch(value: Partial<PavementDesignState>) { onChange({ ...state, ...value }) }
 
-  const plan = <PavementDesignPlan document={mapDocument} geometry={geometry} markers={markers.markers} />
   return <section className="mt-8 space-y-6 rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.03] p-5 md:p-7" aria-label="Pavement FSL conformance">
     <div><p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Design conformance</p><h2 className="mt-2 text-2xl font-semibold">Alignment and FSL design</h2><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">Choose the alignment and finished surface level (FSL) files, then select the correct alignment and surface inside each file. The top layer survey is your asbuilt file for this check; a bottom survey is only needed for thickness.</p></div>
     <div className="grid gap-5 lg:grid-cols-2">
@@ -163,38 +171,15 @@ export default function PavementDesignPanel({ state, onChange, measured, mapSett
       <div className="grid gap-3 sm:grid-cols-4">{[["Assessed", summary.assessed], ["PASS", summary.passed], ["HIGH / LOW", summary.assessed - summary.passed], ["Unassessed", result.rows.length - summary.assessed]].map(([name, value]) => <div key={name} className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">{name}</p><p className="mt-2 text-2xl font-semibold">{value.toLocaleString()}</p></div>)}</div>
       <ReportDownloads report={report} />
       <p className="text-xs leading-6 text-slate-400">Difference = asbuilt RL − FSL RL. Positive is high. Offset: + left / − right in the direction of increasing chainage. {summary.beyondEnds} point(s) lie beyond the alignment ends and have no chainage. Missing design levels remain unassessed.</p>
-      <div className="overflow-x-auto rounded-2xl border border-white/10"><table className="min-w-full text-left text-sm"><caption className="p-3 text-left text-xs text-slate-400">Asbuilt vs FSL — showing {Math.min(500, result.rows.length)} of {result.rows.length.toLocaleString()} points. Reports include all points.</caption><thead className="bg-slate-950 text-xs text-slate-400"><tr>{["Point", "Chainage", "Offset (m)", "Asbuilt RL", "FSL RL", "Difference (mm)", "FSL status"].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-semibold">{label}</th>)}</tr></thead><tbody className="divide-y divide-white/5">{result.rows.slice(0, 500).map((row, index) => <tr key={index} className="text-slate-300"><td className="whitespace-nowrap px-4 py-3">{row.id}</td><td className="whitespace-nowrap px-4 py-3">{row.chainage === null ? row.stationStatus.replaceAll("_", " ") : `CH ${formatChainage(row.chainage)}`}</td><td className="whitespace-nowrap px-4 py-3">{row.offset === null ? "—" : `${Math.abs(row.offset).toFixed(3)} ${row.offset < 0 ? "R" : "L"}`}</td><td className="px-4 py-3">{row.elevation.toFixed(3)}</td><td className="px-4 py-3">{row.designLevel?.toFixed(3) ?? "—"}</td><td className="px-4 py-3">{row.differenceMm?.toFixed(1) ?? "—"}</td><td className="whitespace-nowrap px-4 py-3" style={{ color: statusColours[row.status] }}>{row.status.replaceAll("_", " ")}</td></tr>)}</tbody></table></div>
+      <div className="overflow-x-auto rounded-2xl border border-white/10"><table className="min-w-full text-left text-sm"><caption className="p-3 text-left text-xs text-slate-400">Asbuilt vs FSL — showing {Math.min(500, result.rows.length)} of {result.rows.length.toLocaleString()} points. Reports include all points.</caption><thead className="bg-slate-950 text-xs text-slate-400"><tr>{["Point", "Chainage", "Offset (m)", "Asbuilt RL", "FSL RL", "Difference (mm)", "FSL status"].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-semibold">{label}</th>)}</tr></thead><tbody className="divide-y divide-white/5">{result.rows.slice(0, 500).map((row, index) => <tr key={index} className="text-slate-300"><td className="whitespace-nowrap px-4 py-3">{row.id}</td><td className="whitespace-nowrap px-4 py-3">{row.chainage === null ? row.stationStatus.replaceAll("_", " ") : `CH ${formatChainage(row.chainage)}`}</td><td className="whitespace-nowrap px-4 py-3">{row.offset === null ? "—" : `${Math.abs(row.offset).toFixed(3)} ${row.offset < 0 ? "R" : "L"}`}</td><td className="px-4 py-3">{row.elevation.toFixed(3)}</td><td className="px-4 py-3">{row.designLevel?.toFixed(3) ?? "—"}</td><td className="px-4 py-3">{row.differenceMm?.toFixed(1) ?? "—"}</td><td className="whitespace-nowrap px-4 py-3" style={{ color: pavementLevelColours[row.status] }}>{row.status.replaceAll("_", " ")}</td></tr>)}</tbody></table></div>
     </>}
     {(measured || mapDocument) && <div className="space-y-4 border-t border-white/10 pt-6">
       <h3 className="text-xl font-semibold">Alignment, FSL and asbuilt map</h3>
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"><CrsPicker label="Pavement design and asbuilt survey" value={mapSettings.defaultCrs} onChange={(code) => { onMapChange({ ...mapSettings, defaultCrs: code }); patch({ confirmed: false }) }} catalogue={catalogue} loading={!catalogue.length && !catalogueError} note="Choose the actual common projected metre grid. This positions the map; the input coordinates and heights are not converted." /><div><label className="block text-sm text-slate-300">Map background<select aria-label="Pavement design map background" value={mapSettings.basemap} onChange={(event) => onMapChange({ ...mapSettings, basemap: event.target.value as Basemap })} className={inputClass}><option value="street">Street map</option><option value="aerial">Aerial / satellite (Esri)</option><option value="none">Source-grid plan</option></select></label><label className="mt-4 block text-xs text-slate-300">Survey opacity · {mapSettings.opacity}%<input type="range" aria-label="Pavement design map opacity" min="0" max="100" value={mapSettings.opacity} onChange={(event) => onMapChange({ ...mapSettings, opacity: Number(event.target.value) })} className="mt-3 w-full accent-cyan-400" /></label></div></div>
       {catalogueError && <p role="alert" className="text-sm text-amber-200">{catalogueError} <button type="button" className="underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></p>}
-      {mapSettings.basemap !== "none" && crs && !coordinateError && !unitError ? <Suspense fallback={plan}><SurveyMap crs={crs} basemap={mapSettings.basemap} opacity={mapSettings.opacity} document={mapDocument} geometry={geometry} geometryContext="survey" selectedAlignmentName={state.alignmentName} chainageInterval={state.labelInterval} heightUnitLabel="m (asbuilt)" fallback={plan} /></Suspense> : <>{mapSettings.basemap !== "none" && <p role="status" className="text-sm text-amber-200">{coordinateError || unitError || "Select the common survey CRS to display the background map. The source-grid plan is shown below."}</p>}{plan}</>}
+      <PavementFieldMap geometry={geometry} document={mapDocument} points={sectionPoints} settings={mapSettings} crs={crs} state={workspace} onChange={onWorkspaceChange} alignmentName={state.alignmentName} interval={state.labelInterval} mode="level" scope="All asbuilt points" datum={state.datum} criteria={{ lowerMm: state.lowerMm, upperMm: state.upperMm }} />
       <p className="text-xs leading-6 text-slate-400">Yellow: alignment and chainages at {markers.interval} m intervals; labels are decluttered at smaller scales. Map points: {geometry.points.length.toLocaleString()} of {(measured?.points.length ?? 0).toLocaleString()}; reports assess every asbuilt point. Background imagery provides location context.</p>
     </div>}
     {(warnings.length > 0 || Boolean(result?.rejectedFaces)) && <details className="text-xs text-amber-200"><summary className="cursor-pointer">File and surface notes</summary><ul className="mt-2 list-disc space-y-1 pl-5">{result?.rejectedFaces ? <li>{result.rejectedFaces} invalid or degenerate TIN faces ignored.</li> : null}{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
   </section>
-}
-
-function PavementDesignPlan({ document, geometry, markers }: { document?: LandXmlDocument; geometry: ReturnType<typeof pavementDesignMapGeometry>; markers: ReturnType<typeof alignmentChainageMarkers>["markers"] }) {
-  const plan = useMemo(() => {
-    const alignment = document?.alignments[0]
-    const surface = document?.surfaces[0]
-    const faces = surface?.faces.filter((_, index) => index % Math.max(1, Math.ceil(surface.faces.length / 1500)) === 0) ?? []
-    const points = [...geometry.points, ...(alignment?.points ?? []), ...faces.flatMap((face) => face.map((id) => surface!.points[id]).filter(Boolean))]
-    let minE = Infinity, maxE = -Infinity, minN = Infinity, maxN = -Infinity
-    for (const p of points) { minE = Math.min(minE, p.easting); maxE = Math.max(maxE, p.easting); minN = Math.min(minN, p.northing); maxN = Math.max(maxN, p.northing) }
-    const scale = Math.min(930 / Math.max(maxE - minE, 1), 450 / Math.max(maxN - minN, 1))
-    const x = (e: number) => 500 + (e - (minE + maxE) / 2) * scale
-    const y = (n: number) => 260 - (n - (minN + maxN) / 2) * scale
-    return { alignment, surface, faces, x, y, hasPoints: points.length > 0 }
-  }, [document, geometry])
-  if (!plan.hasPoints) return <p className="text-sm text-slate-400">Select an alignment or FSL surface to preview its position.</p>
-  const { x, y } = plan
-  return <svg viewBox="0 0 1000 520" role="img" aria-label="Pavement source-grid plan with FSL, alignment, chainage labels and asbuilt points" className="block w-full rounded-2xl border border-white/10 bg-slate-950">
-    {plan.faces.map((face, index) => { const points = face.map((id) => plan.surface!.points[id]); return points.every(Boolean) ? <polygon key={index} points={points.map((p) => `${x(p.easting)},${y(p.northing)}`).join(" ")} fill="#22d3ee10" stroke="#22d3ee30" strokeWidth="0.5" /> : null })}
-    {plan.alignment && <polyline points={plan.alignment.points.map((p) => `${x(p.easting)},${y(p.northing)}`).join(" ")} fill="none" stroke="#facc15" strokeWidth="2.5" />}
-    {geometry.points.map((p, index) => <circle key={index} cx={x(p.easting)} cy={y(p.northing)} r="3.5" fill={geometry.pointColours?.[p.code] ?? "#22d3ee"}><title>{p.id}</title></circle>)}
-    {markers.filter((_, index) => index % Math.max(1, Math.ceil(markers.length / 60)) === 0).map((p) => <g key={p.chainage}><circle cx={x(p.easting)} cy={y(p.northing)} r="2.5" fill="#facc15" /><text x={x(p.easting) + 4} y={y(p.northing) - 9} fill="#fef08a" fontSize="10" stroke="#020617" strokeWidth="3" paintOrder="stroke">{p.label}</text></g>)}
-  </svg>
 }
