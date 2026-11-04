@@ -20,6 +20,7 @@ type Feature = {
 }
 
 const features: Feature[] = [
+  { icon: FileText, title: "Trimble JXL → DXF", description: "Convert calculated JobXML grid points to DXF with point labels, feature-code layers and classification filters.", to: "/tools/jxl-to-dxf" },
   { icon: Mountain, title: "Contours to 3D Terrain", description: "Build a terrain surface from reviewed DXF contours, inspect it in 3D and export LandXML or a CAD TIN.", to: "/tools/contours-to-terrain" },
   { icon: ClipboardList, title: "As-built vs Design", description: "Check every measured point against a design TIN, apply tolerances and export PDF, Excel or CSV reports.", to: "/tools/as-built-check" },
   {

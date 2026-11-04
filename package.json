@@ -26,7 +26,8 @@
     "test:pavement-bottom": "node --import tsx scripts/validate-pavement-bottom-surface.mjs",
     "test:tin-boundaries": "node --import tsx scripts/validate-tin-boundaries.mjs",
     "test:pavement-thickness": "node --import tsx scripts/validate-pavement-thickness.mjs",
-    "test:pavement-slopes": "node --import tsx scripts/validate-pavement-slopes.mjs"
+    "test:pavement-slopes": "node --import tsx scripts/validate-pavement-slopes.mjs",
+    "test:jxl": "node --import tsx scripts/validate-jobxml.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
@@ -46,7 +47,8 @@
     "react-router-dom": "^7.18.1",
     "robust-segment-intersect": "^1.0.1",
     "stripe": "^22.3.1",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "saxes": "5.0.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",

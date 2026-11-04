@@ -15,6 +15,8 @@ import DxfExportSettings from "../components/DxfExportSettings"
 import type { DxfSettings } from "../components/DxfExportSettings"
 import PageSeo from "../components/PageSeo"
 import { parsePointFileText } from "../lib/pointFile"
+import { createPointDxf } from "../lib/pointDxf"
+import type { PointDxfPoint as SurveyPoint } from "../lib/pointDxf"
 
 type ColumnMapping = {
   pointId: number
@@ -26,35 +28,10 @@ type ColumnMapping = {
 
 type MappingKey = keyof ColumnMapping
 
-type SurveyPoint = {
-  rowNumber: number
-  pointId: string
-  easting: number
-  northing: number
-  elevation: number | null
-  code: string
-  valid: boolean
-}
-
 type MappingField = {
   key: MappingKey
   label: string
   optional: boolean
-}
-
-function sanitizeLayerName(code: string) {
-  const cleaned = code
-    .trim()
-    .toUpperCase()
-    // R12 symbol names allow at most 31 ASCII letters, digits, $, _ and -.
-    .replace(/[^A-Z0-9_$-]/g, "_")
-    .slice(0, 31)
-
-  return cleaned || "SURVEY_POINTS"
-}
-
-function cleanDxfText(value: string) {
-  return value.replace(/[\r\n]+/g, " ").trim()
 }
 
 function parseNumber(value: string | undefined) {
@@ -67,179 +44,6 @@ function parseNumber(value: string | undefined) {
   const number = Number(trimmed)
 
   return Number.isFinite(number) ? number : null
-}
-
-function getPointLayer(
-  point: SurveyPoint,
-  settings: DxfSettings,
-) {
-  if (settings.layerByCode && point.code.trim()) {
-    return sanitizeLayerName(point.code)
-  }
-
-  return "SURVEY_POINTS"
-}
-
-function createDxf(
-  points: SurveyPoint[],
-  settings: DxfSettings,
-) {
-  const validPoints = points.filter((point) => point.valid)
-
-  const layers = Array.from(
-    new Set([
-      "0",
-      ...validPoints.map((point) =>
-        getPointLayer(point, settings),
-      ),
-    ]),
-  )
-
-  const dxf: string[] = []
-
-  function add(code: number, value: string | number) {
-    dxf.push(String(code))
-    dxf.push(String(value))
-  }
-
-  function addText(
-    layer: string,
-    x: number,
-    y: number,
-    z: number,
-    text: string,
-  ) {
-    if (!text.trim()) {
-      return
-    }
-
-    add(0, "TEXT")
-    add(8, layer)
-    add(10, x)
-    add(20, y)
-    add(30, z)
-    add(40, settings.textHeight)
-    add(1, cleanDxfText(text))
-    add(7, "STANDARD")
-  }
-
-  add(0, "SECTION")
-  add(2, "HEADER")
-  add(9, "$ACADVER")
-  add(1, "AC1009")
-  add(0, "ENDSEC")
-
-  add(0, "SECTION")
-  add(2, "TABLES")
-
-  // Define the linetype and text style referenced by the exported entities.
-  add(0, "TABLE")
-  add(2, "LTYPE")
-  add(70, 1)
-  add(0, "LTYPE")
-  add(2, "CONTINUOUS")
-  add(70, 0)
-  add(3, "Solid line")
-  add(72, 65)
-  add(73, 0)
-  add(40, 0)
-  add(0, "ENDTAB")
-
-  add(0, "TABLE")
-  add(2, "STYLE")
-  add(70, 1)
-  add(0, "STYLE")
-  add(2, "STANDARD")
-  add(70, 0)
-  add(40, 0)
-  add(41, 1)
-  add(50, 0)
-  add(71, 0)
-  add(42, settings.textHeight)
-  add(3, "txt")
-  add(4, "")
-  add(0, "ENDTAB")
-
-  add(0, "TABLE")
-  add(2, "LAYER")
-  add(70, layers.length)
-
-  layers.forEach((layer) => {
-    add(0, "LAYER")
-    add(2, layer)
-    add(70, 0)
-    add(62, 7)
-    add(6, "CONTINUOUS")
-  })
-
-  add(0, "ENDTAB")
-  add(0, "ENDSEC")
-
-  add(0, "SECTION")
-  add(2, "BLOCKS")
-  add(0, "ENDSEC")
-
-  add(0, "SECTION")
-  add(2, "ENTITIES")
-
-  validPoints.forEach((point) => {
-    const layer = getPointLayer(point, settings)
-    const elevation = point.elevation ?? 0
-
-    const offset = Math.max(
-      settings.textHeight * 1.5,
-      0.15,
-    )
-
-    if (settings.includePoint) {
-      add(0, "POINT")
-      add(8, layer)
-      add(10, point.easting)
-      add(20, point.northing)
-      add(30, elevation)
-    }
-
-    if (settings.includePointId) {
-      addText(
-        layer,
-        point.easting + offset,
-        point.northing + offset,
-        elevation,
-        point.pointId,
-      )
-    }
-
-    if (
-      settings.includeElevation &&
-      point.elevation !== null
-    ) {
-      addText(
-        layer,
-        point.easting + offset,
-        point.northing - offset,
-        elevation,
-        point.elevation.toFixed(3),
-      )
-    }
-
-    if (
-      settings.includeCode &&
-      point.code.trim()
-    ) {
-      addText(
-        layer,
-        point.easting + offset,
-        point.northing - offset * 2.5,
-        elevation,
-        point.code,
-      )
-    }
-  })
-
-  add(0, "ENDSEC")
-  add(0, "EOF")
-
-  return `${dxf.join("\r\n")}\r\n`
 }
 
 export default function CsvToDxf() {
@@ -466,7 +270,7 @@ export default function CsvToDxf() {
       return
     }
 
-    const content = createDxf(
+    const content = createPointDxf(
       validPoints,
       settings,
     )

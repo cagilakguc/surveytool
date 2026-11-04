@@ -1,6 +1,7 @@
 export const usageTools = [
   "landxml",
   "csv_dxf",
+  "jxl_dxf",
   "coordinates",
   "gis",
   "terrain",
@@ -22,6 +23,7 @@ export type UsageDetails = {
   source?: "upload" | "demo" | "saved_project";
   format?:
     | "xml"
+    | "jxl"
     | "dxf"
     | "pdf"
     | "csv"
@@ -57,6 +59,7 @@ export function makeUsageEvent(
   if (
     [
       "xml",
+      "jxl",
       "dxf",
       "pdf",
       "csv",

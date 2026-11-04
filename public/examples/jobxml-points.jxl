@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<JOBFile jobName="SurveyTool demonstration" version="6.31" product="SurveyTool example">
+  <FieldBook>
+    <PointRecord ID="1"><Name>BM1</Name><Deleted>false</Deleted></PointRecord>
+    <PointRecord ID="2"><Name>P1</Name><Deleted>false</Deleted></PointRecord>
+    <PointRecord ID="3"><Name>P2</Name><Deleted>false</Deleted></PointRecord>
+    <PointRecord ID="4"><Name>P3</Name><Deleted>false</Deleted></PointRecord>
+    <PointRecord ID="5"><Name>P4</Name><Deleted>false</Deleted></PointRecord>
+  </FieldBook>
+  <Reductions>
+    <Point><ID>1</ID><Name>BM1</Name><Code>CONTROL</Code><SurveyMethod>KeyedIn</SurveyMethod><Classification>Normal</Classification><Grid><North>2000.25</North><East>1000.125</East><Elevation>100</Elevation></Grid></Point>
+    <Point><ID>2</ID><Name>P1</Name><Code>KERB</Code><SurveyMethod>Fix</SurveyMethod><Classification>Stakeout</Classification><Grid><North>2025.5</North><East>1010.000123</East><Elevation>100.075</Elevation></Grid></Point>
+    <Point><ID>3</ID><Name>P2</Name><Code>KERB</Code><SurveyMethod>Fix</SurveyMethod><Classification>Stakeout</Classification><Grid><North>2040.625</North><East>1030.25</East><Elevation>100.125</Elevation></Grid></Point>
+    <Point><ID>4</ID><Name>P3</Name><Code>ROAD</Code><SurveyMethod>Fix</SurveyMethod><Classification>Stakeout</Classification><Grid><North>2050.75</North><East>1040.5</East><Elevation>100.25</Elevation></Grid></Point>
+    <Point><ID>5</ID><Name>P4</Name><Code>ROAD</Code><SurveyMethod>Fix</SurveyMethod><Classification>Stakeout</Classification><Grid><North>2070.875</North><East>1060.75</East><Elevation>100.375</Elevation></Grid></Point>
+  </Reductions>
+  <Environment><DisplaySettings><DistanceUnits>Metres</DistanceUnits><HeightUnits>Metres</HeightUnits></DisplaySettings><CoordinateSystem><SystemName>Demonstration local grid</SystemName><Projection><ZoneName>Example site grid</ZoneName><GridOrientation>IncreasingNorthEast</GridOrientation></Projection></CoordinateSystem></Environment>
+</JOBFile>
