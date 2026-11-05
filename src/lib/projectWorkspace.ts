@@ -2,6 +2,7 @@ import type { LandXmlDocument } from "./landxml";
 import type { SurveyPointLayer } from "./surveyPoints";
 
 export const projectRoutes: Record<string, string> = {
+  network: "/tools/network-adjustment",
   terrain: "/tools/contours-to-terrain",
   asbuilt: "/tools/as-built-check",
   landxml: "/tools/landxml-viewer",
@@ -12,6 +13,7 @@ export const projectRoutes: Record<string, string> = {
   gis: "/tools/gis-export",
 };
 export const projectLabels: Record<string, string> = {
+  network: "Network Adjustment",
   terrain: "Contours to 3D Terrain",
   asbuilt: "As-built vs Design",
   landxml: "LandXML Viewer",

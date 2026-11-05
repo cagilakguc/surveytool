@@ -2,7 +2,7 @@ export const feedbackTones = ["positive", "negative", "idea"] as const
 export type FeedbackTone = typeof feedbackTones[number]
 
 export const feedbackTopics = [
-  "General", "CSV / TXT to DXF", "GIS Export", "LandXML Viewer",
+  "General", "Network Adjustment", "CSV / TXT to DXF", "GIS Export", "LandXML Viewer",
   "Surface Compare", "Cross Section", "Coordinate Converter", "Pavement Conformance",
 ] as const
 

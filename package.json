@@ -28,7 +28,8 @@
     "test:pavement-thickness": "node --import tsx scripts/validate-pavement-thickness.mjs",
     "test:pavement-slopes": "node --import tsx scripts/validate-pavement-slopes.mjs",
     "test:jxl": "node --import tsx scripts/validate-jobxml.mjs",
-    "test:dbx": "node --import tsx scripts/validate-dbx.mjs"
+    "test:dbx": "node --import tsx scripts/validate-dbx.mjs",
+    "test:network": "node --import tsx scripts/validate-network.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

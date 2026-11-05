@@ -1,4 +1,5 @@
 export const usageTools = [
+  "network_adjustment",
   "landxml",
   "csv_dxf",
   "jxl_dxf",
