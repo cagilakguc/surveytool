@@ -121,7 +121,7 @@ export default function JobXmlToDxf() {
           <div className="mt-5 flex flex-wrap gap-3"><button type="button" onClick={() => exportFile("dxf")} disabled={Boolean(busy) || !eligibleCount || !contentSelected} className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-6 py-3 font-semibold text-slate-950 disabled:opacity-40"><Download size={18} />Download DXF</button><button type="button" onClick={() => exportFile("csv")} disabled={Boolean(busy) || !filtered.length} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-slate-200 disabled:opacity-40"><FileText size={18} />Download source point CSV</button></div>{prepared && <a href={prepared.url} download={prepared.fileName} className="mt-4 block break-words text-sm text-cyan-300 underline">Download prepared file · {prepared.fileName}</a>}
         </section>
       </>}
-      <p className="mt-8 text-sm leading-6 text-slate-500">Leica DBX import is planned. This converter currently accepts Trimble JobXML files with calculated grid points. <Link to="/tools/csv-to-dxf" className="text-slate-300 underline">Use CSV / TXT → DXF</Link> for point text files.</p>
+      <p className="mt-8 text-sm leading-6 text-slate-500"><Link to="/tools/dbx-to-dxf" className="text-slate-300 underline">Leica DBX → DXF</Link> opens supported Leica job packages. <Link to="/tools/csv-to-dxf" className="text-slate-300 underline">Use CSV / TXT → DXF</Link> for point text files.</p>
     </div>
   </div>
 }

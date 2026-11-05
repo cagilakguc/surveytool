@@ -23,6 +23,7 @@ const LocalProjects = lazy(() => import("./pages/LocalProjects"))
 const GisExporter = lazy(() => import("./pages/GisExporter"))
 const ContourTerrain = lazy(() => import("./pages/ContourTerrain"))
 const JobXmlToDxf = lazy(() => import("./pages/JobXmlToDxf"))
+const DbxToDxf = lazy(() => import("./pages/DbxToDxf"))
 
 function App() {
   return (
@@ -38,6 +39,7 @@ function App() {
 
           <Routes>
             <Route path="/tools/jxl-to-dxf" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading JobXML converter…</p>}><JobXmlToDxf /></Suspense>} />
+            <Route path="/tools/dbx-to-dxf" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading Leica DBX converter…</p>}><DbxToDxf /></Suspense>} />
             <Route path="/tools/contours-to-terrain" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading terrain builder…</p>}><ContourTerrain /></Suspense>} />
             <Route path="/tools/as-built-check" element={<Suspense fallback={<p className="p-12">Loading design check…</p>}><AsBuiltCheck /></Suspense>} />
             <Route path="/projects" element={<Suspense fallback={<p className="p-12">Loading projects…</p>}><LocalProjects /></Suspense>} />

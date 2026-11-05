@@ -2,6 +2,7 @@ export const usageTools = [
   "landxml",
   "csv_dxf",
   "jxl_dxf",
+  "dbx_dxf",
   "coordinates",
   "gis",
   "terrain",
@@ -24,6 +25,7 @@ export type UsageDetails = {
   format?:
     | "xml"
     | "jxl"
+    | "dbx"
     | "dxf"
     | "pdf"
     | "csv"
@@ -60,6 +62,7 @@ export function makeUsageEvent(
     [
       "xml",
       "jxl",
+      "dbx",
       "dxf",
       "pdf",
       "csv",

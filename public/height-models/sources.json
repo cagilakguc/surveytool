@@ -1,0 +1,22 @@
+{
+  "authority": "Land Information New Zealand (LINZ)",
+  "licence": "CC BY 4.0",
+  "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "modelPackageVersion": "20200110",
+  "models": [
+    {
+      "file": "nzgeoid2016.gtx.gz",
+      "bytes": 10093244,
+      "gzipBytes": 8450517,
+      "sha256": "081040dd085bf4da6995c927ca69fd1c6043dc9ae708b8ccbf1b59f81525981f",
+      "source": "https://github.com/linz/proj-datumgrid-nz/blob/master/files/nzgeoid2016.gtx"
+    },
+    {
+      "file": "auckht1946-nzvd2016.gtx.gz",
+      "bytes": 15584,
+      "gzipBytes": 6931,
+      "sha256": "dfc462636f48d5ceaaebee1a5caa333ea5ccdcbdbce8a4b29ad775ff45efa5d8",
+      "source": "https://github.com/linz/proj-datumgrid-nz/blob/master/files/auckht1946-nzvd2016.gtx"
+    }
+  ]
+}

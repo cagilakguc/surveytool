@@ -24,8 +24,8 @@ or shared codes. Connecting strings and curves require a later validated reader.
 
 The original job is never changed or uploaded. The public demo is synthetic;
 real survey datasets used for local QA must not be committed to the repository.
-Direct Leica DBX import remains pending a complete sample job and a suitable
-reader; a JXL/DBX filename is never treated as a CSV file.
+Leica DBX uses the separate `/tools/dbx-to-dxf` reader described in
+`docs/dbx-converter.md`. A JXL/DBX filename is never treated as a CSV file.
 
 References checked during implementation:
 

@@ -1,0 +1,5 @@
+Height transformation models supplied by Land Information New Zealand (LINZ).
+Source package: https://github.com/linz/proj-datumgrid-nz, version 20200110.
+Distributed GTX bytes are unmodified and gzip-compressed.
+
+Creative Commons Attribution 4.0 International (https://data.linz.govt.nz/license/attribution-4-0-international/)
