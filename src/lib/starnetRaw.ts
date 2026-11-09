@@ -68,7 +68,8 @@ const ONE_RE = /Correction.*\b1\.00\b/;
 
 const GON_TO_DEG = 0.9;
 
-function reduceFaceTwo(hz: number, vz: number) {
+/** Reduces a face II observation to its face I equivalent (gon). */
+export function reduceFaceTwo(hz: number, vz: number) {
   return { hz: (((hz - 200) % 400) + 400) % 400, vz: 400 - vz };
 }
 
@@ -147,11 +148,12 @@ export function parseStarnetRaw(text: string): RawTraverse {
   });
 
   qc.readingCount = readings.length;
-  const pairs = averagePairs(readings, qc);
+  const pairs = averageReadings(readings, qc);
   return { readings, pairs, qc };
 }
 
-function averagePairs(readings: RawReading[], qc: RawQc): RawPair[] {
+/** Groups face I and face II readings per setup, target and heights, and averages them. */
+export function averageReadings(readings: RawReading[], qc: RawQc): RawPair[] {
   const groups = new Map<string, RawReading[]>();
   for (const reading of readings) {
     const key = `${reading.setup}\u0000${reading.target}\u0000${reading.hi}\u0000${reading.ht}`;

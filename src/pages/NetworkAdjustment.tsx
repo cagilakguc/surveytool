@@ -15,6 +15,7 @@ import {
 import type { BuiltNetwork } from "../lib/networkFromRaw"
 import { parseStarnetRaw } from "../lib/starnetRaw"
 import type { RawTraverse } from "../lib/starnetRaw"
+import { parseRawCsv, pairsToCsv, readingsToCsv } from "../lib/rawCsv"
 import { checkTraverseClosure } from "../lib/traverseClosure"
 import type { TraverseClosureResult } from "../lib/traverseClosure"
 
@@ -29,7 +30,11 @@ const copy = {
     disclaimer:
       "Results are for checking and must be reviewed by a qualified surveyor before use in design or construction decisions.",
     language: "Language",
-    rawFile: "Raw traverse file (.txt)",
+    rawFile: "Raw traverse file (.txt Starnet or .csv)",
+    csvHint:
+      "CSV columns: setup, target, hz, vz, sd, hi, ht (required); face, ppm (optional). Angles in gon, distances in metres. Comma or semicolon separated.",
+    downloadReadings: "Download readings (CSV)",
+    downloadPairs: "Download averaged pairs (CSV)",
     orPaste: "or paste the raw text",
     loaded: "Loaded",
     coordinates: "Coordinates (id, easting, northing, elevation, fixed)",
@@ -100,7 +105,11 @@ const copy = {
     disclaimer:
       "Sonuçlar kontrol amaçlıdır. Tasarım veya inşaat kararlarında kullanmadan önce yetkili bir surveyor tarafından incelenmelidir.",
     language: "Dil",
-    rawFile: "Ham poligon dosyası (.txt)",
+    rawFile: "Ham poligon dosyası (.txt Starnet veya .csv)",
+    csvHint:
+      "CSV sütunları: setup (istasyon), target (hedef), hz, vz, sd, hi, ht zorunlu; face (yüz), ppm isteğe bağlı. Açılar gon, mesafeler metre. Virgül veya noktalı virgülle ayrılabilir.",
+    downloadReadings: "Ölçüleri indir (CSV)",
+    downloadPairs: "Ortalama ölçüleri indir (CSV)",
     orPaste: "veya ham metni yapıştırın",
     loaded: "Yüklendi",
     coordinates: "Koordinatlar (id, doğu, kuzey, yükseklik, sabit)",
@@ -189,6 +198,22 @@ type Run = {
   closureError: string | null
 }
 
+/** CSV when the file name ends in .csv, or when the first data line is a comma/semicolon header and not a Starnet line. */
+function looksLikeCsv(text: string, fileName: string) {
+  if (fileName.toLowerCase().endsWith(".csv")) return true;
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim() && !line.trim().startsWith("#"));
+  return firstLine !== undefined && /[,;]/.test(firstLine) && !/^\s*(DB|DM)\s/.test(firstLine);
+}
+
+function saveCsv(fileName: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/csv" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatNumber(value: number, digits: number) {
   return Number.isFinite(value) ? value.toFixed(digits) : "—"
 }
@@ -245,7 +270,7 @@ export default function NetworkAdjustment() {
     setRun(null)
     try {
       if (!rawText.trim()) throw new Error("Load or paste a raw traverse file first.")
-      const raw = parseStarnetRaw(rawText)
+      const raw = looksLikeCsv(rawText, fileName) ? parseRawCsv(rawText) : parseStarnetRaw(rawText)
       const coordinates = parseCoordinateTable(coordinatesText)
       const aliases = parseAliases(aliasText)
       const excludedSetups = new Set(
@@ -304,6 +329,14 @@ export default function NetworkAdjustment() {
     URL.revokeObjectURL(url)
   }
 
+  const downloadReadings = () => {
+    if (run) saveCsv("measurements-readings.csv", readingsToCsv(run.raw.readings))
+  }
+
+  const downloadPairs = () => {
+    if (run) saveCsv("measurements-averaged-pairs.csv", pairsToCsv(run.raw.pairs))
+  }
+
   const input =
     "w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-cyan-400/60 focus:outline-none"
   const label = "block text-xs font-medium uppercase tracking-wide text-slate-400"
@@ -353,9 +386,10 @@ export default function NetworkAdjustment() {
           <label className="mt-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm text-slate-300 hover:border-cyan-300/50">
             <Upload size={16} />
             <span>{fileName ? `${t.loaded}: ${fileName}` : t.rawFile}</span>
-            <input type="file" accept=".txt" className="sr-only" onChange={onFile} />
+            <input type="file" accept=".txt,.csv" className="sr-only" onChange={onFile} />
           </label>
           <p className="mt-4 text-xs text-slate-500">{t.orPaste}</p>
+          <p className="mt-1 text-xs text-slate-500">{t.csvHint}</p>
           <textarea
             className={`${input} mt-2 h-32 font-mono text-xs`}
             value={rawText}
@@ -461,6 +495,16 @@ export default function NetworkAdjustment() {
           <button type="button" onClick={downloadCsv} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm hover:border-cyan-300/50">
             <Download size={16} /> {t.download}
           </button>
+        )}
+        {run && (
+          <>
+            <button type="button" onClick={downloadReadings} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm hover:border-cyan-300/50">
+              <Download size={16} /> {t.downloadReadings}
+            </button>
+            <button type="button" onClick={downloadPairs} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm hover:border-cyan-300/50">
+              <Download size={16} /> {t.downloadPairs}
+            </button>
+          </>
         )}
       </div>
 
