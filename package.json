@@ -32,7 +32,8 @@
     "test:network": "node --import tsx scripts/validate-network-adjustment.mjs",
     "test:starnet": "node --import tsx scripts/validate-starnet-import.mjs",
     "test:raw-csv": "node --import tsx scripts/validate-raw-csv.mjs",
-    "test:observation-csv": "node --import tsx scripts/validate-observation-csv.mjs"
+    "test:observation-csv": "node --import tsx scripts/validate-observation-csv.mjs",
+    "test:jxl-observations": "node --import tsx scripts/validate-jobxml-observations.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
