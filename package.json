@@ -31,6 +31,7 @@
     "test:dbx": "node --import tsx scripts/validate-dbx.mjs",
     "test:network": "node --import tsx scripts/validate-network-adjustment.mjs",
     "test:starnet": "node --import tsx scripts/validate-starnet-import.mjs",
+    "test:raw-csv": "node --import tsx scripts/validate-raw-csv.mjs",
     "test:observation-csv": "node --import tsx scripts/validate-observation-csv.mjs"
   },
   "dependencies": {
