@@ -25,6 +25,7 @@ const ContourTerrain = lazy(() => import("./pages/ContourTerrain"))
 const JobXmlToDxf = lazy(() => import("./pages/JobXmlToDxf"))
 const DbxToDxf = lazy(() => import("./pages/DbxToDxf"))
 const NetworkAdjustment = lazy(() => import("./pages/NetworkAdjustment"))
+const ObservationPlan = lazy(() => import("./pages/ObservationPlan"))
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
           </div>
 
           <Routes>
+            <Route path="/tools/observation-plan" element={<Suspense fallback={<p role="status" className="relative z-10 px-6 py-24 text-center text-slate-400">Loading observation plan…</p>}><ObservationPlan /></Suspense>} />
             <Route path="/tools/jxl-to-dxf" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading JobXML converter…</p>}><JobXmlToDxf /></Suspense>} />
             <Route path="/tools/dbx-to-dxf" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading Leica DBX converter…</p>}><DbxToDxf /></Suspense>} />
             <Route path="/tools/contours-to-terrain" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading terrain builder…</p>}><ContourTerrain /></Suspense>} />
