@@ -54,7 +54,8 @@ const copy = {
     angleSigma: "Angle σ (arc-seconds)",
     distanceConstant: "Distance constant (mm)",
     distancePpm: "Distance ppm",
-    zenithNote: "Zenith angles use the same angle σ.",
+    zenithSigma: "Zenith σ (arc-seconds)",
+    zenithNote: "Enter the zenith σ separately. STAR*NET uses 1 mgon for zenith, which is 3.24 arc-seconds.",
     outlier: "Outlier threshold (|w|)",
     precisionMin: "Minimum traverse precision (1 : n)",
     traverse: "Traverse closure check",
@@ -133,7 +134,8 @@ const copy = {
     angleSigma: "Açı σ (saniye)",
     distanceConstant: "Mesafe sabiti (mm)",
     distancePpm: "Mesafe ppm",
-    zenithNote: "Zenit açıları da aynı açı σ değerini kullanır.",
+    zenithSigma: "Zenit σ (saniye)",
+    zenithNote: "Zenit σ ayrıca girilir. STAR*NET zenit için 1 mgon kullanır, bu 3,24 saniyedir.",
     outlier: "Kaba hata eşiği (|w|)",
     precisionMin: "Minimum poligon hassasiyeti (1 : n)",
     traverse: "Poligon kapanış kontrolü",
@@ -191,15 +193,19 @@ type Copy = Record<keyof (typeof copy)["en"], string>
 type Preset = {
   label: string
   angleSigma: number
+  zenithSigma: number
   distanceConstant: number
   distancePpm: number
 }
 
 const presets: Record<string, Preset> = {
-  ts16: { label: 'Leica TS16 1" (ISO 1σ)', angleSigma: 1, distanceConstant: 1, distancePpm: 1.5 },
-  s7Iso: { label: 'Trimble S7 1" (ISO 1σ)', angleSigma: 1, distanceConstant: 1, distancePpm: 2 },
-  s7Rmse: { label: 'Trimble S7 1" (RMSE, conservative)', angleSigma: 1, distanceConstant: 2, distancePpm: 2 },
-  custom: { label: "Custom", angleSigma: 1, distanceConstant: 1, distancePpm: 2 },
+  ts16: { label: 'Leica TS16 1" (ISO 1σ)', angleSigma: 1, zenithSigma: 1, distanceConstant: 1, distancePpm: 1.5 },
+  s7Iso: { label: 'Trimble S7 1" (ISO 1σ)', angleSigma: 1, zenithSigma: 1, distanceConstant: 1, distancePpm: 2 },
+  s7Rmse: { label: 'Trimble S7 1" (RMSE, conservative)', angleSigma: 1, zenithSigma: 1, distanceConstant: 2, distancePpm: 2 },
+  // STAR*NET project options: 0.5 mgon angles (1 mgon = 3.24 arc-seconds), 1 mgon zenith, 1 mm + 1.5 ppm.
+  // Centering errors (2 mm) are not part of this model.
+  starnet: { label: "STAR*NET project (0.5 mgon angle, 1 mgon zenith)", angleSigma: 1.62, zenithSigma: 3.24, distanceConstant: 1, distancePpm: 1.5 },
+  custom: { label: "Custom", angleSigma: 1, zenithSigma: 1, distanceConstant: 1, distancePpm: 2 },
 }
 
 type Run = {
@@ -243,6 +249,7 @@ export default function NetworkAdjustment() {
 
   const [presetKey, setPresetKey] = useState("ts16")
   const [angleSigma, setAngleSigma] = useState(presets.ts16.angleSigma)
+  const [zenithSigma, setZenithSigma] = useState(presets.ts16.zenithSigma)
   const [distanceConstant, setDistanceConstant] = useState(presets.ts16.distanceConstant)
   const [distancePpm, setDistancePpm] = useState(presets.ts16.distancePpm)
   const [outlierThreshold, setOutlierThreshold] = useState(3)
@@ -260,6 +267,7 @@ export default function NetworkAdjustment() {
     setPresetKey(key)
     const preset = presets[key]
     setAngleSigma(preset.angleSigma)
+    setZenithSigma(preset.zenithSigma)
     setDistanceConstant(preset.distanceConstant)
     setDistancePpm(preset.distancePpm)
   }
@@ -289,7 +297,7 @@ export default function NetworkAdjustment() {
     distanceConstantM: distanceConstant / 1000,
     distancePpm,
     angleStdDevSec: angleSigma,
-    zenithStdDevSec: angleSigma,
+    zenithStdDevSec: zenithSigma,
   }
 
   const runAdjustment = () => {
@@ -482,6 +490,10 @@ export default function NetworkAdjustment() {
             <div>
               <label className={label}>{t.angleSigma}</label>
               <input type="number" step="0.1" min="0" className={`${input} mt-2`} value={angleSigma} onChange={(e) => { setPresetKey("custom"); setAngleSigma(Number(e.target.value)) }} />
+            </div>
+            <div>
+              <label className={label}>{t.zenithSigma}</label>
+              <input type="number" step="0.1" min="0" className={`${input} mt-2`} value={zenithSigma} onChange={(e) => { setPresetKey("custom"); setZenithSigma(Number(e.target.value)) }} />
             </div>
             <div>
               <label className={label}>{t.distanceConstant}</label>
