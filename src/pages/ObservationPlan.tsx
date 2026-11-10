@@ -5,7 +5,8 @@ import { ArrowLeft, MapPin, Upload } from "lucide-react"
 
 import PageSeo from "../components/PageSeo"
 import { parseObservationCsv } from "../lib/observationCsv"
-import type { JobObservation, ObservationData, PlanSetup } from "../lib/observationCsv"
+import { parseJobXmlObservations } from "../lib/jobXmlObservations"
+import type { JobObservation, ObservationData, PlanSetup } from "../lib/observationModel"
 
 type Language = "en" | "tr"
 
@@ -46,6 +47,13 @@ const copy = {
     codes: "Codes",
     legendSetup: "Setup",
     legendTarget: "Observed point",
+    planView: "Plan",
+    setupView: "By setup",
+    instrumentHeight: "Instrument height (m)",
+    targetHeight: "Target height (m)",
+    mean: "Mean",
+    noRows: "No observations for this setup.",
+    fileTypes: "Accepts Trimble all-observations CSV or JobXML (.jxl) field book.",
     disclaimer:
       "Coordinates are not adjusted. Results are for checking only and must be reviewed by a qualified surveyor.",
     error: "Could not read the file",
@@ -86,6 +94,13 @@ const copy = {
     codes: "Kodlar",
     legendSetup: "Kurulum",
     legendTarget: "Gözlenen nokta",
+    planView: "Plan",
+    setupView: "Kuruluma göre",
+    instrumentHeight: "Alet yüksekliği (m)",
+    targetHeight: "Hedef yüksekliği (m)",
+    mean: "Ortalama",
+    noRows: "Bu kurulum için gözlem yok.",
+    fileTypes: "Trimble tüm gözlemler CSV'si veya JobXML (.jxl) dosyası kabul edilir.",
     disclaimer:
       "Koordinatlar dengelenmemiştir. Sonuçlar yalnızca kontrol amaçlıdır ve yetkili bir surveyor tarafından incelenmelidir.",
     error: "Dosya okunamadı",
@@ -106,6 +121,72 @@ type Pair = {
   observations: JobObservation[]
 }
 
+function SetupsView({ data, includeDeleted, t, card }: { data: ObservationData; includeDeleted: boolean; t: Copy; card: string }) {
+  return (
+    <div className="mt-8 space-y-6">
+      {data.setups.map((setup) => {
+        const rows = data.observations
+          .filter((o) => o.setupRecordId === setup.recordId && (includeDeleted || !o.deleted))
+          .sort((a, b) => a.target.localeCompare(b.target) || (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0))
+        const means = data.means.filter((m) => m.setupRecordId === setup.recordId && (includeDeleted || !m.deleted))
+        return (
+          <section key={setup.recordId} className={card}>
+            <h2 className="text-lg font-semibold">{setup.label}</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {t.time}: {setup.timestamp.replace("T", " ")} · {t.instrumentHeight}: {Number.isFinite(setup.instrumentHeightM) ? setup.instrumentHeightM.toFixed(3) : "—"} · {t.observations}: {setup.observationCount}
+            </p>
+            {rows.length === 0 && means.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">{t.noRows}</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="uppercase tracking-wide text-slate-400">
+                    <tr>
+                      {[t.target, t.code, t.time, t.face, t.hz, t.v, t.sd, t.targetHeight, t.classification, t.deleted].map((h) => (
+                        <th key={h} className="whitespace-nowrap py-2 pr-4 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((o) => (
+                      <tr key={`${o.observationNumber}-${o.timestamp}-${o.face}`} className={`border-t border-white/5 ${o.deleted ? "text-slate-500 line-through" : "text-slate-300"}`}>
+                        <td className="py-1.5 pr-4 font-mono">{o.target}</td>
+                        <td className="py-1.5 pr-4">{o.pointCode}</td>
+                        <td className="py-1.5 pr-4 font-mono">{o.timestamp.replace("T", " ")}</td>
+                        <td className="py-1.5 pr-4">{o.face}</td>
+                        <td className="py-1.5 pr-4 font-mono">{o.hzDeg.toFixed(6)}</td>
+                        <td className="py-1.5 pr-4 font-mono">{o.vDeg.toFixed(6)}</td>
+                        <td className="py-1.5 pr-4 font-mono">{o.slopeM.toFixed(4)}</td>
+                        <td className="py-1.5 pr-4 font-mono">{Number.isFinite(o.targetHeightM) ? o.targetHeightM.toFixed(3) : "—"}</td>
+                        <td className="py-1.5 pr-4">{o.classification}</td>
+                        <td className="py-1.5 pr-4">{o.deleted ? t.yes : t.no}</td>
+                      </tr>
+                    ))}
+                    {means.map((m) => (
+                      <tr key={`mean-${m.target}-${m.timestamp}`} className="border-t border-white/5 italic text-cyan-200">
+                        <td className="py-1.5 pr-4 font-mono">{m.target}</td>
+                        <td className="py-1.5 pr-4">{m.pointCode}</td>
+                        <td className="py-1.5 pr-4 font-mono">{m.timestamp.replace("T", " ")}</td>
+                        <td className="py-1.5 pr-4">{t.mean} ({m.count})</td>
+                        <td className="py-1.5 pr-4 font-mono">{m.hzDeg.toFixed(6)}</td>
+                        <td className="py-1.5 pr-4 font-mono">{m.vDeg.toFixed(6)}</td>
+                        <td className="py-1.5 pr-4 font-mono">{m.slopeM.toFixed(4)}</td>
+                        <td className="py-1.5 pr-4" />
+                        <td className="py-1.5 pr-4">MTA</td>
+                        <td className="py-1.5 pr-4">{m.deleted ? t.yes : t.no}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function ObservationPlan() {
   const [language, setLanguage] = useState<Language>("en")
   const t: Copy = copy[language]
@@ -116,6 +197,7 @@ export default function ObservationPlan() {
   const [includeDeleted, setIncludeDeleted] = useState(false)
   const [hiddenSetups, setHiddenSetups] = useState<Set<string>>(new Set())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<"plan" | "setups">("plan")
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -125,7 +207,9 @@ export default function ObservationPlan() {
     setHiddenSetups(new Set())
     setFileName(file.name)
     try {
-      setData(parseObservationCsv(await file.text()))
+      const text = await file.text()
+      const isJobXml = /\.jxl$|\.xml$/i.test(file.name) || /^\s*(<\?xml[\s\S]*?\?>\s*)?<JOBFile/.test(text.slice(0, 400))
+      setData(isJobXml ? parseJobXmlObservations(text) : parseObservationCsv(text))
     } catch (failure) {
       setData(null)
       setError(failure instanceof Error ? failure.message : String(failure))
@@ -297,7 +381,7 @@ export default function ObservationPlan() {
         <label className="mt-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm text-slate-300 hover:border-cyan-300/50">
           <Upload size={16} />
           <span>{fileName ? `${t.loaded}: ${fileName}` : t.upload}</span>
-          <input type="file" accept=".csv" className="sr-only" onChange={onFile} />
+          <input type="file" accept=".csv,.jxl,.xml" className="sr-only" onChange={onFile} />
         </label>
         {error && (
           <p role="alert" className="mt-3 text-sm text-rose-200">
@@ -309,6 +393,24 @@ export default function ObservationPlan() {
       {!data && !error && <p className="mt-10 text-center text-slate-400">{t.noData}</p>}
 
       {data && (
+        <div className="mt-8 inline-flex rounded-xl border border-white/10 p-1 text-sm">
+          {(["plan", "setups"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={viewMode === mode}
+              onClick={() => setViewMode(mode)}
+              className={`rounded-lg px-3 py-1 ${viewMode === mode ? "bg-cyan-400/20 text-cyan-100" : "text-slate-400 hover:text-white"}`}
+            >
+              {mode === "plan" ? t.planView : t.setupView}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {data && viewMode === "setups" && <SetupsView data={data} includeDeleted={includeDeleted} t={t} card={card} />}
+
+      {data && viewMode === "plan" && (
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             {svg}
