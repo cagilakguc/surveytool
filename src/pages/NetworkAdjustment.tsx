@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { Link } from "react-router-dom"
 import { ArrowLeft, Download, Sigma, Upload } from "lucide-react"
@@ -15,6 +15,10 @@ import {
 import type { BuiltNetwork } from "../lib/networkFromRaw"
 import { parseStarnetRaw } from "../lib/starnetRaw"
 import type { RawTraverse } from "../lib/starnetRaw"
+import { parseJobXmlObservations } from "../lib/jobXmlObservations"
+import type { ObservationData } from "../lib/observationModel"
+import { approximatePoints, mergeCoordinates, networkFromJobXml } from "../lib/networkFromJobXml"
+import { buildTraverseChain } from "../lib/traverseChain"
 import { parseRawCsv, pairsToCsv, readingsToCsv } from "../lib/rawCsv"
 import { checkTraverseClosure } from "../lib/traverseClosure"
 import type { TraverseClosureResult } from "../lib/traverseClosure"
@@ -30,7 +34,11 @@ const copy = {
     disclaimer:
       "Results are for checking and must be reviewed by a qualified surveyor before use in design or construction decisions.",
     language: "Language",
-    rawFile: "Raw traverse file (.txt Starnet or .csv)",
+    rawFile: "Raw traverse file (.txt Starnet, .csv or .jxl field book)",
+    jxlChain: "Detected traverse chain",
+    jxlChainClosed: "closed",
+    jxlChainOpen: "open",
+    jxlClosureNote: "Traverse closure is not run from a field book yet. Use a raw traverse file for closure.",
     csvHint:
       "CSV columns: setup, target, hz, vz, sd, hi, ht (required); face, ppm (optional). Angles in gon, distances in metres. Comma or semicolon separated.",
     downloadReadings: "Download readings (CSV)",
@@ -105,7 +113,11 @@ const copy = {
     disclaimer:
       "Sonuçlar kontrol amaçlıdır. Tasarım veya inşaat kararlarında kullanmadan önce yetkili bir surveyor tarafından incelenmelidir.",
     language: "Dil",
-    rawFile: "Ham poligon dosyası (.txt Starnet veya .csv)",
+    rawFile: "Ham poligon dosyası (.txt Starnet, .csv veya .jxl saha defteri)",
+    jxlChain: "Algılanan poligon zinciri",
+    jxlChainClosed: "kapalı",
+    jxlChainOpen: "açık",
+    jxlClosureNote: "Saha defterinden poligon kapanış kontrolü henüz yapılmıyor. Kapanış için ham poligon dosyasını kullanın.",
     csvHint:
       "CSV sütunları: setup (istasyon), target (hedef), hz, vz, sd, hi, ht zorunlu; face (yüz), ppm isteğe bağlı. Açılar gon, mesafeler metre. Virgül veya noktalı virgülle ayrılabilir.",
     downloadReadings: "Ölçüleri indir (CSV)",
@@ -223,6 +235,7 @@ export default function NetworkAdjustment() {
   const t: Copy = copy[language]
 
   const [rawText, setRawText] = useState("")
+  const [jobXml, setJobXml] = useState<ObservationData | null>(null)
   const [fileName, setFileName] = useState("")
   const [coordinatesText, setCoordinatesText] = useState("")
   const [aliasText, setAliasText] = useState("")
@@ -255,7 +268,21 @@ export default function NetworkAdjustment() {
     const file = event.target.files?.[0]
     if (!file) return
     setFileName(file.name)
-    setRawText(await file.text())
+    setError(null)
+    setRun(null)
+    const text = await file.text()
+    if (/\.(jxl|xml)$/i.test(file.name)) {
+      try {
+        setJobXml(parseJobXmlObservations(text))
+        setRawText("")
+      } catch (failure) {
+        setJobXml(null)
+        setError(failure instanceof Error ? failure.message : String(failure))
+      }
+      return
+    }
+    setJobXml(null)
+    setRawText(text)
   }
 
   const precision: InstrumentPrecision = {
@@ -269,13 +296,25 @@ export default function NetworkAdjustment() {
     setError(null)
     setRun(null)
     try {
-      if (!rawText.trim()) throw new Error("Load or paste a raw traverse file first.")
-      const raw = looksLikeCsv(rawText, fileName) ? parseRawCsv(rawText) : parseStarnetRaw(rawText)
       const coordinates = parseCoordinateTable(coordinatesText)
       const aliases = parseAliases(aliasText)
       const excludedSetups = new Set(
         excludedText.split(",").map((s) => s.trim()).filter(Boolean),
       )
+      if (jobXml) {
+        const merged = mergeCoordinates(coordinates, approximatePoints(jobXml))
+        const built = networkFromJobXml(jobXml, { aliases, excludedSetups, coordinates: merged, precision, includeDeleted: false })
+        const adjustment = adjustNetwork(built.points, built.observations, precision, { outlierThreshold })
+        const emptyRaw: RawTraverse = {
+          readings: [],
+          pairs: [],
+          qc: { job: fileName, readingCount: 0, headerCorrectionAnomalies: [], skippedLines: [], unpairedFaces: [] },
+        }
+        setRun({ raw: emptyRaw, built, adjustment, closure: null, closureError: null })
+        return
+      }
+      if (!rawText.trim()) throw new Error("Load or paste a raw traverse file first.")
+      const raw = looksLikeCsv(rawText, fileName) ? parseRawCsv(rawText) : parseStarnetRaw(rawText)
       const options = { aliases, excludedSetups, coordinates, precision }
       const built = buildNetworkInput(raw, options)
       const adjustment = adjustNetwork(built.points, built.observations, precision, {
@@ -386,14 +425,19 @@ export default function NetworkAdjustment() {
           <label className="mt-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm text-slate-300 hover:border-cyan-300/50">
             <Upload size={16} />
             <span>{fileName ? `${t.loaded}: ${fileName}` : t.rawFile}</span>
-            <input type="file" accept=".txt,.csv" className="sr-only" onChange={onFile} />
+            <input type="file" accept=".txt,.csv,.jxl,.xml" className="sr-only" onChange={onFile} />
           </label>
+          {jobXml && <JobXmlChain data={jobXml} t={t} />}
+          {jobXml && traverseEnabled && <p className="mt-3 text-xs text-amber-200">{t.jxlClosureNote}</p>}
           <p className="mt-4 text-xs text-slate-500">{t.orPaste}</p>
           <p className="mt-1 text-xs text-slate-500">{t.csvHint}</p>
           <textarea
             className={`${input} mt-2 h-32 font-mono text-xs`}
             value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
+            onChange={(e) => {
+              setRawText(e.target.value)
+              setJobXml(null)
+            }}
             placeholder="# Starnet Traverse ..."
           />
         </div>
@@ -516,6 +560,27 @@ export default function NetworkAdjustment() {
       )}
 
       {run && <Results run={run} t={t} card={card} />}
+    </div>
+  )
+}
+
+/** Summary of the traverse chain found in a field book, shown under the file picker. */
+function JobXmlChain({ data, t }: { data: ObservationData; t: Copy }) {
+  const chain = useMemo(() => buildTraverseChain(data, { includeDeleted: false }), [data])
+  if (chain.stations.length === 0) return null
+  return (
+    <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/60 p-3 text-xs text-slate-300">
+      <p className="text-slate-400">
+        {t.jxlChain} ({chain.closed ? t.jxlChainClosed : t.jxlChainOpen})
+      </p>
+      <p className="mt-1 font-mono">
+        {chain.stations.map((s) => s.name).join(" → ")}
+      </p>
+      {chain.warnings.map((w) => (
+        <p key={w} className="mt-1 text-amber-200">
+          {w}
+        </p>
+      ))}
     </div>
   )
 }
