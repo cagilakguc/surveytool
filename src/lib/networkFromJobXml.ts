@@ -159,5 +159,20 @@ export function networkFromJobXml(
   if (observations.length === 0) {
     warnings.push("No field book observations matched the coordinate table. Check the point names and aliases.")
   }
-  return { points: coordinates.map((p) => ({ ...p })), observations, dropped, warnings }
+
+  // A free point that no observation uses leaves its coordinates undetermined, so it is left out.
+  // Points named only by an alias are replaced by their canonical name and are left out silently.
+  const used = new Set<string>()
+  for (const o of observations) {
+    if (o.kind === "angle") used.add(o.station).add(o.backsight).add(o.foresight)
+    else used.add(o.from).add(o.to)
+  }
+  const points = coordinates
+    .filter((p) => {
+      if (p.fixedHorizontal || p.fixedHeight || used.has(p.id)) return true
+      if (!aliases.has(p.id)) dropped.push(`point ${p.id} has no observations and is left out`)
+      return false
+    })
+    .map((p) => ({ ...p }))
+  return { points, observations, dropped, warnings }
 }
