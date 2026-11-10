@@ -115,4 +115,18 @@ assert.equal(merged.find((p) => p.id === "P1").easting, 1000, "table value kept 
 assert.equal(merged.find((p) => p.id === "P3").easting, 1040.1, "approximate value used for P3");
 assert.equal(merged.find((p) => p.id === "P3").fixedHorizontal, false, "approximate points are never fixed");
 
+// --- 6. An alias-only name with no observations does not leave the network undetermined ---
+const withAlias = networkFromJobXml(data, {
+  aliases: new Map([["P3ALT", "P3"]]),
+  excludedSetups: new Set(),
+  coordinates: mergeCoordinates(table, [
+    { id: "P3", easting: 1035, northing: 2065, elevation: 12, fixedHorizontal: false, fixedHeight: false },
+    { id: "P3ALT", easting: 1035, northing: 2065, elevation: 12, fixedHorizontal: false, fixedHeight: false },
+  ]),
+  precision,
+  includeDeleted: false,
+});
+assert.ok(!withAlias.points.some((p) => p.id === "P3ALT"), "alias name is not an unknown point");
+assert.ok(adjustNetwork(withAlias.points, withAlias.observations, precision, {}), "adjustment still solves");
+
 console.log("validate-network-jxl: all checks passed");
