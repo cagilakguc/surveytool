@@ -7,6 +7,8 @@ import PageSeo from "../components/PageSeo"
 import { parseObservationCsv } from "../lib/observationCsv"
 import { parseJobXmlObservations } from "../lib/jobXmlObservations"
 import type { JobObservation, ObservationData, PlanSetup } from "../lib/observationModel"
+import { buildTraverseChain } from "../lib/traverseChain"
+import type { ChainLink, TraverseChain } from "../lib/traverseChain"
 
 type Language = "en" | "tr"
 
@@ -49,6 +51,20 @@ const copy = {
     legendTarget: "Observed point",
     planView: "Plan",
     setupView: "By setup",
+    chainView: "Chain",
+    chainTitle: "Traverse chain",
+    chainClosed: "Closed",
+    chainOpen: "Open",
+    chainBacksight: "Backsight",
+    chainLink: "Link",
+    chainKnown: "Known",
+    chainChained: "Chained",
+    chainBreak: "Break",
+    chainNone: "No backsight",
+    chainKnownPoints: "Known points (observed from first station)",
+    chainOccupations: "Occupations",
+    chainNoWarnings: "No chain warnings.",
+    chainNoData: "No setups with observations to chain.",
     instrumentHeight: "Instrument height (m)",
     targetHeight: "Target height (m)",
     mean: "Mean",
@@ -96,6 +112,20 @@ const copy = {
     legendTarget: "Gözlenen nokta",
     planView: "Plan",
     setupView: "Kuruluma göre",
+    chainView: "Zincir",
+    chainTitle: "Poligon zinciri",
+    chainClosed: "Kapalı",
+    chainOpen: "Açık",
+    chainBacksight: "Geri nişan",
+    chainLink: "Bağlantı",
+    chainKnown: "Bilinen",
+    chainChained: "Bağlı",
+    chainBreak: "Kopuk",
+    chainNone: "Geri nişan yok",
+    chainKnownPoints: "Bilinen noktalar (ilk kurulumdan gözlenen)",
+    chainOccupations: "Kurulumlar",
+    chainNoWarnings: "Zincir uyarısı yok.",
+    chainNoData: "Zincirlenecek gözlemli kurulum yok.",
     instrumentHeight: "Alet yüksekliği (m)",
     targetHeight: "Hedef yüksekliği (m)",
     mean: "Ortalama",
@@ -119,6 +149,107 @@ type Pair = {
   easting: number
   northing: number
   observations: JobObservation[]
+}
+
+const LINK_TONE: Record<ChainLink, string> = {
+  known: "bg-slate-500/20 text-slate-200",
+  chain: "bg-emerald-400/15 text-emerald-200",
+  break: "bg-rose-400/15 text-rose-200",
+  none: "bg-amber-400/15 text-amber-200",
+}
+
+function ChainView({ data, includeDeleted, t, card }: { data: ObservationData; includeDeleted: boolean; t: Copy; card: string }) {
+  const chain: TraverseChain = useMemo(() => buildTraverseChain(data, { includeDeleted }), [data, includeDeleted])
+  const linkLabel: Record<ChainLink, string> = {
+    known: t.chainKnown,
+    chain: t.chainChained,
+    break: t.chainBreak,
+    none: t.chainNone,
+  }
+
+  if (chain.stations.length === 0) {
+    return <p className="mt-8 text-center text-slate-400">{t.chainNoData}</p>
+  }
+
+  return (
+    <div className="mt-8 space-y-6">
+      <section className={card}>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold">{t.chainTitle}</h2>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${chain.closed ? "bg-emerald-400/15 text-emerald-200" : "bg-slate-500/20 text-slate-200"}`}
+          >
+            {chain.closed ? t.chainClosed : t.chainOpen}
+          </span>
+        </div>
+        <ol className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+          {chain.stations.map((station, index) => (
+            <li key={`${station.name}-${index}`} className="flex items-center gap-2">
+              <span className="rounded-lg border border-white/10 px-3 py-1 font-mono">{station.name}</span>
+              {index < chain.stations.length - 1 && <span className="text-slate-500">→</span>}
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className={card}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-400">
+              <tr>
+                <th className="py-2 pr-4">{t.setup}</th>
+                <th className="py-2 pr-4">{t.chainBacksight}</th>
+                <th className="py-2 pr-4">{t.chainLink}</th>
+                <th className="py-2 pr-4">{t.chainOccupations}</th>
+                <th className="py-2 pr-4">{t.observations}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chain.stations.map((station, index) => (
+                <tr key={`${station.name}-${index}`} className="border-t border-white/5 align-top">
+                  <td className="py-2 pr-4 font-mono">{station.name}</td>
+                  <td className="py-2 pr-4 font-mono">{station.backsight ?? "—"}</td>
+                  <td className="py-2 pr-4">
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${LINK_TONE[station.link]}`}>{linkLabel[station.link]}</span>
+                  </td>
+                  <td className="py-2 pr-4 text-slate-300">
+                    {station.occupations.map((o) => (
+                      <div key={o.recordId}>
+                        {o.label} · {o.backsight ?? "—"}
+                      </div>
+                    ))}
+                  </td>
+                  <td className="py-2 pr-4 text-slate-300">
+                    {station.occupations.reduce((sum, o) => sum + o.observationCount, 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {chain.knownPoints.length > 0 && (
+        <section className={card}>
+          <h3 className="text-sm font-semibold">{t.chainKnownPoints}</h3>
+          <p className="mt-2 font-mono text-sm text-slate-300">{chain.knownPoints.join(", ")}</p>
+        </section>
+      )}
+
+      <section className={card}>
+        <h3 className="text-sm font-semibold">{t.warnings}</h3>
+        {chain.warnings.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-400">{t.chainNoWarnings}</p>
+        ) : (
+          <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-amber-200">
+            {chain.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  )
 }
 
 function SetupsView({ data, includeDeleted, t, card }: { data: ObservationData; includeDeleted: boolean; t: Copy; card: string }) {
@@ -197,7 +328,7 @@ export default function ObservationPlan() {
   const [includeDeleted, setIncludeDeleted] = useState(false)
   const [hiddenSetups, setHiddenSetups] = useState<Set<string>>(new Set())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<"plan" | "setups">("plan")
+  const [viewMode, setViewMode] = useState<"plan" | "setups" | "chain">("plan")
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -394,7 +525,7 @@ export default function ObservationPlan() {
 
       {data && (
         <div className="mt-8 inline-flex rounded-xl border border-white/10 p-1 text-sm">
-          {(["plan", "setups"] as const).map((mode) => (
+          {(["plan", "setups", "chain"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -402,13 +533,14 @@ export default function ObservationPlan() {
               onClick={() => setViewMode(mode)}
               className={`rounded-lg px-3 py-1 ${viewMode === mode ? "bg-cyan-400/20 text-cyan-100" : "text-slate-400 hover:text-white"}`}
             >
-              {mode === "plan" ? t.planView : t.setupView}
+              {mode === "plan" ? t.planView : mode === "setups" ? t.setupView : t.chainView}
             </button>
           ))}
         </div>
       )}
 
       {data && viewMode === "setups" && <SetupsView data={data} includeDeleted={includeDeleted} t={t} card={card} />}
+      {data && viewMode === "chain" && <ChainView data={data} includeDeleted={includeDeleted} t={t} card={card} />}
 
       {data && viewMode === "plan" && (
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
