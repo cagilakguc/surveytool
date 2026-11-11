@@ -10,6 +10,7 @@ import PavementFieldMap from "./PavementFieldMap"
 import { horizontalAlignment } from "../lib/alignmentGeometry"
 import { alignmentChainageMarkers, formatChainage } from "../lib/alignmentStationing"
 import { parseLandXmlFile } from "../lib/landxmlAsync"
+import { parsePavementSurfaceFile } from "../lib/pavementSurfaceFile"
 import { pavementDesignMapGeometry, pavementDesignReport, pavementDesignUnitError, pavementLevelColours } from "../lib/pavementDesign"
 import type { PavementDesignResult, PavementDesignState } from "../lib/pavementDesign"
 import { trackToolAction } from "../lib/toolUsage"
@@ -108,13 +109,13 @@ export default function PavementDesignPanel({ state, onChange, measured, mapSett
     const controller = new AbortController()
     parsers.current[role] = controller
     activeWorker.current?.terminate(); activeWorker.current = null; setBusy(false); setCompleted(null)
-    setLoading((value) => ({ ...value, [role]: "Opening LandXML…" })); setError("")
+    setLoading((value) => ({ ...value, [role]: role === "fsl" ? "Opening FSL surface…" : "Opening LandXML…" })); setError("")
     try {
-      if (file.size > 100 * 1024 * 1024) throw new Error("Choose a LandXML file of 100 MB or smaller. Clip large surfaces to the work area first.")
-      const document = await parseLandXmlFile(file, { signal: controller.signal, onProgress: (stage, percent) => setLoading((value) => ({ ...value, [role]: `${stage} · ${percent}%` })) })
+      if (file.size > 100 * 1024 * 1024) throw new Error("Choose a surface or alignment file of 100 MB or smaller. Clip large surfaces to the work area first.")
+      const document = await (role === "fsl" ? parsePavementSurfaceFile : parseLandXmlFile)(file, { signal: controller.signal, onProgress: (stage, percent) => setLoading((value) => ({ ...value, [role]: `${stage} · ${percent}%` })) })
       if (controller.signal.aborted) return
       if (role === "alignment" && !document.alignments.length) throw new Error("This XML contains no alignments. Choose the alignment LandXML file.")
-      if (role === "fsl" && !document.surfaces.length) throw new Error("This XML contains no surfaces. Choose the FSL design LandXML file.")
+      if (role === "fsl" && !document.surfaces.length) throw new Error("This file contains no surfaces. Choose the FSL design LandXML or TIN file.")
       delete parsers.current[role]
       onChange({ ...latestState.current, ...(role === "alignment" ? { alignmentDocument: document, alignmentName: "" } : { fslDocument: document, surfaceName: "" }), confirmed: false })
       trackToolAction("pavement", "import_complete", { source: "upload" })
@@ -151,8 +152,9 @@ export default function PavementDesignPanel({ state, onChange, measured, mapSett
         const doc = role === "alignment" ? state.alignmentDocument : state.fslDocument
         const options = role === "alignment" ? doc?.alignments : doc?.surfaces
         return <div key={role} className="min-w-0 rounded-2xl border border-white/15 bg-slate-950/40 p-5">
-          <h3 className="font-semibold">{role === "alignment" ? "3. Alignment LandXML" : "4. FSL design LandXML"}</h3>
-          <label className="mt-3 block text-sm text-slate-300">{role === "alignment" ? "Choose alignment file" : "Choose FSL file"}<input type="file" accept=".xml,.landxml,application/xml,text/xml" aria-label={role === "alignment" ? "Alignment LandXML file" : "FSL design LandXML file"} className={`${inputClass} file:mr-3 file:rounded-full file:border-0 file:bg-cyan-300/15 file:px-3 file:py-1.5 file:text-cyan-100`} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file, role) }} /></label>
+      <h3 className="font-semibold">{role === "alignment" ? "3. Alignment LandXML" : "4. FSL design LandXML / TIN"}</h3>
+          <label className="mt-3 block text-sm text-slate-300">{role === "alignment" ? "Choose alignment file" : "Choose FSL surface file"}<input type="file" accept={role === "alignment" ? ".xml,.landxml,application/xml,text/xml" : ".xml,.landxml,.tin,application/xml,text/xml"} aria-label={role === "alignment" ? "Alignment LandXML file" : "FSL design LandXML or TIN file"} className={`${inputClass} file:mr-3 file:rounded-full file:border-0 file:bg-cyan-300/15 file:px-3 file:py-1.5 file:text-cyan-100`} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file, role) }} /></label>
+          {role === "fsl" && <p className="mt-2 text-xs text-slate-400">.tin supports Arc/Info ASCII TIN; binary exports need LandXML conversion or a format-specific decoder.</p>}
           {loading[role] && <p role="status" className="mt-3 text-xs text-cyan-200">{loading[role]}</p>}
           {doc && <><p className="mt-3 break-all text-xs text-slate-400">Loaded: {doc.fileName} · {doc.units}</p><label className="mt-3 block text-sm text-slate-300">{role === "alignment" ? "Alignment" : "FSL surface"}<select aria-label={role === "alignment" ? "Pavement alignment" : "Pavement FSL surface"} value={role === "alignment" ? state.alignmentName : state.surfaceName} className={inputClass} onChange={(event) => patch({ ...(role === "alignment" ? { alignmentName: event.target.value } : { surfaceName: event.target.value }), confirmed: false })}><option value="">Choose the correct {role === "alignment" ? "alignment" : "FSL surface"}…</option>{options?.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label><button type="button" className="mt-3 text-xs text-slate-400 underline" onClick={() => patch({ ...(role === "alignment" ? { alignmentDocument: null, alignmentName: "" } : { fslDocument: null, surfaceName: "" }), confirmed: false })}>Remove {role === "alignment" ? "alignment" : "FSL file"}</button></>}
         </div>
