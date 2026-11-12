@@ -17,7 +17,8 @@ export type LevelReading = {
   distanceM: number | null
 }
 
-export type LevelMethod = "auto" | "distance" | "setups"
+/** Explicit user-selected distribution. No automatic fallback between methods. */
+export type LevelMethod = "distance" | "setups"
 
 export type LevelRow = LevelReading & {
   heightOfInstrumentM: number
@@ -237,13 +238,16 @@ export function calculateLeveling(readings: LevelReading[], options: LevelOption
   const totalDistanceM = completeDistances
     ? legs.reduce((sum, leg) => sum + (leg.distanceM ?? 0), 0)
     : null
-  const requestedMethod = options.method ?? "auto"
-  if (requestedMethod === "distance" && !completeDistances) {
+  // Never switch the chosen weighting silently: surveyors need reproducible results.
+  // Default to equal corrections per instrument occupation unless the user explicitly
+  // chooses distance-weighting and supplies *both* BS and FS sight distances throughout.
+  const methodUsed: LevelMethod = options.method ?? "setups"
+  if (methodUsed !== "setups" && methodUsed !== "distance") {
+    throw new Error("Choose correction distribution by instrument setups or distance.")
+  }
+  if (methodUsed === "distance" && !completeDistances) {
     throw new Error("Distance-weighted corrections need both BS and FS sight distances for every setup.")
   }
-  const methodUsed: "distance" | "setups" = requestedMethod === "auto"
-    ? completeDistances ? "distance" : "setups"
-    : requestedMethod === "distance" ? "distance" : "setups"
   const misclosureM = knownEnd === null ? null : currentElevation - knownEnd
   const weights = legs.map((leg) => methodUsed === "distance" ? leg.distanceM ?? 0 : 1)
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
@@ -284,7 +288,8 @@ export function calculateLeveling(readings: LevelReading[], options: LevelOption
   ]
   if (misclosureM === null) notes.push("Open line: no known end elevation, so no closure or distributed corrections.")
   if (!completeDistances) notes.push("Some BS/FS distances are missing. No distance-based closure tolerance can be certified.")
-  if (methodUsed === "setups" && misclosureM !== null) notes.push("Closure correction is distributed equally per instrument setup.")
+  if (methodUsed === "setups" && misclosureM !== null) notes.push("Closure correction is distributed equally per instrument setup (cumulative correction = -misclosure × completed setups / total setups).")
+  if (methodUsed === "distance" && misclosureM !== null) notes.push("Closure correction is distributed proportionally to cumulative BS+FS sight distances (cumulative correction = -misclosure × distance traversed / total distance).")
   if (withinTolerance === false) notes.push("Measured misclosure exceeds the chosen project tolerance. Review the field measurements before using corrected elevations.")
   return {
     rows, legs, startPoint, endPoint,
