@@ -18,6 +18,7 @@ import type { RawTraverse } from "../lib/starnetRaw"
 import { parseJobXmlObservations } from "../lib/jobXmlObservations"
 import type { ObservationData } from "../lib/observationModel"
 import { approximatePoints, mergeCoordinates, networkFromJobXml } from "../lib/networkFromJobXml"
+import { buildJobXmlClosureInput } from "../lib/jobXmlTraverseClosure"
 import { buildTraverseChain } from "../lib/traverseChain"
 import { parseRawCsv, pairsToCsv, readingsToCsv } from "../lib/rawCsv"
 import { checkTraverseClosure } from "../lib/traverseClosure"
@@ -38,7 +39,7 @@ const copy = {
     jxlChain: "Detected traverse chain",
     jxlChainClosed: "closed",
     jxlChainOpen: "open",
-    jxlClosureNote: "Traverse closure is not run from a field book yet. Use a raw traverse file for closure.",
+    jxlClosureNote: "For JXL closure, review the suggested station sequence, enter the final orientation point, and provide fixed XY control coordinates for both ends and orientation points. Angles are taken from a single setup.",
     csvHint:
       "CSV columns: setup, target, hz, vz, sd, hi, ht (required); face, ppm (optional). Angles in gon, distances in metres. Comma or semicolon separated.",
     downloadReadings: "Download readings (CSV)",
@@ -118,7 +119,7 @@ const copy = {
     jxlChain: "Algılanan poligon zinciri",
     jxlChainClosed: "kapalı",
     jxlChainOpen: "açık",
-    jxlClosureNote: "Saha defterinden poligon kapanış kontrolü henüz yapılmıyor. Kapanış için ham poligon dosyasını kullanın.",
+    jxlClosureNote: "JXL kapanması için önerilen istasyon sırasını kontrol edin, son yöneltme noktasını girin ve başlangıç/bitiş ile yöneltme noktalarının sabit XY koordinatlarını tanımlayın. Açılar tek bir kurulumun ölçülerinden hesaplanır.",
     csvHint:
       "CSV sütunları: setup (istasyon), target (hedef), hz, vz, sd, hi, ht zorunlu; face (yüz), ppm isteğe bağlı. Açılar gon, mesafeler metre. Virgül veya noktalı virgülle ayrılabilir.",
     downloadReadings: "Ölçüleri indir (CSV)",
@@ -281,8 +282,13 @@ export default function NetworkAdjustment() {
     const text = await file.text()
     if (/\.(jxl|xml)$/i.test(file.name)) {
       try {
-        setJobXml(parseJobXmlObservations(text))
+        const parsed = parseJobXmlObservations(text)
+        setJobXml(parsed)
         setRawText("")
+        const chain = buildTraverseChain(parsed, { includeDeleted: false })
+        setSequenceText(chain.stations.map((station) => station.name).join(", "))
+        setStartBacksight(chain.stations[0]?.backsight ?? "")
+        setEndBacksight("")
       } catch (failure) {
         setJobXml(null)
         setError(failure instanceof Error ? failure.message : String(failure))
@@ -318,7 +324,29 @@ export default function NetworkAdjustment() {
           pairs: [],
           qc: { job: fileName, readingCount: 0, headerCorrectionAnomalies: [], skippedLines: [], unpairedFaces: [] },
         }
-        setRun({ raw: emptyRaw, built, adjustment, closure: null, closureError: null })
+        let closure: TraverseClosureResult | null = null
+        let closureError: string | null = null
+        if (traverseEnabled) {
+          try {
+            const sequence = sequenceText.split(",").map((name) => name.trim()).filter(Boolean)
+            const builtClosure = buildJobXmlClosureInput(
+              jobXml,
+              { aliases, excludedSetups, coordinates, precision },
+              {
+                sequence,
+                startBacksight: startBacksight.trim(),
+                endBacksight: endBacksight.trim(),
+                angleStdDevSec: angleSigma,
+                minimumPrecisionDenominator: minimumPrecision,
+              },
+            )
+            const checked = checkTraverseClosure(builtClosure.input)
+            closure = { ...checked, warnings: [...checked.warnings, ...builtClosure.warnings] }
+          } catch (failure) {
+            closureError = failure instanceof Error ? failure.message : String(failure)
+          }
+        }
+        setRun({ raw: emptyRaw, built, adjustment, closure, closureError })
         return
       }
       if (!rawText.trim()) throw new Error("Load or paste a raw traverse file first.")
