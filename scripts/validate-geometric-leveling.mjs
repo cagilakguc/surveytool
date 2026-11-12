@@ -17,7 +17,7 @@ const close = (actual, expected, epsilon = 1e-8) =>
 const parsed = parseLevelCsv(sample)
 assert.equal(parsed.length, 5)
 const result = calculateLeveling(parsed, {
-  startElevationM: 100, knownEndElevationM: 100.543, toleranceMmSqrtKm: 12,
+  startElevationM: 100, knownEndElevationM: 100.543, toleranceMmSqrtKm: 12, method: "distance",
 })
 assert.equal(result.startPoint, "BM_A")
 assert.equal(result.endPoint, "BM_B")
@@ -64,7 +64,7 @@ assert.equal(open.misclosureM, null)
 assert.equal(open.withinTolerance, null)
 close(open.rows.at(-1).adjustedElevationM, 100.545)
 
-// 5. Distances missing: automatic fallback only, no false pass on tolerance.
+// 5. Default is explicitly equal per setup, never an automatic switch.
 const missingDistance = parseLevelCsv(sample.replace("S1,TP1,FS,1.115,35", "S1,TP1,FS,1.115,"))
 const fallback = calculateLeveling(missingDistance, { startElevationM: 100, knownEndElevationM: 100.543 })
 assert.equal(fallback.methodUsed, "setups")
@@ -75,23 +75,41 @@ assert.throws(() => calculateLeveling(missingDistance, {
   startElevationM: 100, knownEndElevationM: 100.543, method: "distance",
 }), /need both BS and FS sight distances/)
 
-// 6. User-selected tolerance and failure warning.
+// 6. Both explicitly selected methods share the same closure but allocate it differently.
+const equalMethod = calculateLeveling(parsed, {
+  startElevationM: 100, knownEndElevationM: 100.543, method: "setups",
+})
+assert.equal(equalMethod.methodUsed, "setups")
+close(equalMethod.legs[0].correctionM, -.001)
+close(equalMethod.legs[1].correctionM, -.002)
+close(result.legs[0].correctionM, -.002 * (65 / 150))
+close(result.legs[1].correctionM, -.002)
+assert.notEqual(equalMethod.legs[0].correctionM, result.legs[0].correctionM)
+close(equalMethod.misclosureM, result.misclosureM)
+close(equalMethod.adjustedEndElevationM, result.adjustedEndElevationM)
+close(result.rows[2].correctionM, result.legs[0].correctionM)
+close(equalMethod.rows[2].correctionM, equalMethod.legs[0].correctionM)
+assert.throws(() => calculateLeveling(parsed, {
+  startElevationM: 100, knownEndElevationM: 100.543, method: "auto",
+}), /Choose correction distribution/)
+
+// 7. User-selected tolerance and failure warning.
 const failure = calculateLeveling(parsed, {
   startElevationM: 100, knownEndElevationM: 100.53, toleranceMmSqrtKm: 12,
 })
 assert.equal(failure.withinTolerance, false)
 assert.ok(failure.notes.some((note) => note.includes("exceeds")))
 
-// 7. Broken BS/FS chain must be rejected.
+// 8. Broken BS/FS chain must be rejected.
 const badChain = parsed.map((r) => r.setup === "S2" && r.sight === "BS" ? { ...r, point: "WRONG" } : r)
 assert.throws(() => calculateLeveling(badChain, { startElevationM: 100 }), /does not match previous turning point/)
 
-// 8. Each setup must have exactly one BS followed by a final FS.
+// 9. Each setup must have exactly one BS followed by a final FS.
 assert.throws(() => calculateLeveling(parsed.map((r) =>
   r.setup === "S1" && r.sight === "FS" ? { ...r, sight: "IS" } : r,
 ), { startElevationM: 100 }), /start with BS and end with FS/)
 
-// 9. Quoted fields and semicolon delimiters.
+// 10. Quoted fields and semicolon delimiters.
 const quoted = parseLevelCsv([
   "setup;point;type;reading_m;distance_m",
   'S1;"BM, A";BS;1.500;20',
@@ -100,11 +118,11 @@ const quoted = parseLevelCsv([
 assert.equal(quoted[0].point, "BM, A")
 close(calculateLeveling(quoted, { startElevationM: 12 }).computedEndElevationM, 12.5)
 
-// 10. Non-consecutive reused setup ID is rejected.
+// 11. Non-consecutive reused setup ID is rejected.
 const duplicateSetup = parsed.map((r, i) => i === 4 ? { ...r, setup: "S1" } : r)
 assert.throws(() => calculateLeveling(duplicateSetup, { startElevationM: 100 }), /separate blocks/)
 
-// 11. Explicit zero and bad readings checked; blank reading is invalid.
+// 12. Explicit zero and bad readings checked; blank reading is invalid.
 assert.equal(parseLevelCsv("setup,point,sight,reading\nS1,A,BS,0\nS1,B,FS,1")[0].readingM, 0)
 assert.throws(() => parseLevelCsv("setup,point,sight,reading\nS1,A,BS,\nS1,B,FS,1"), /invalid staff reading/)
 
