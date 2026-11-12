@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { Link } from "react-router-dom"
-import { ArrowLeft, Download, Sigma, Upload } from "lucide-react"
+import { ArrowLeft, Download, FileText, Sigma, Upload } from "lucide-react"
 
 import PageSeo from "../components/PageSeo"
 import { adjustNetwork } from "../lib/networkAdjustment"
@@ -18,6 +18,10 @@ import type { RawTraverse } from "../lib/starnetRaw"
 import { parseJobXmlObservations } from "../lib/jobXmlObservations"
 import type { ObservationData } from "../lib/observationModel"
 import { approximatePoints, mergeCoordinates, networkFromJobXml } from "../lib/networkFromJobXml"
+import { buildJobXmlClosureInput } from "../lib/jobXmlTraverseClosure"
+import type { TrigHeightClosure } from "../lib/jobXmlTraverseClosure"
+import { createReportPdf, downloadReportBlob, safeReportName } from "../lib/surveyReports"
+import type { SurveyReport } from "../lib/surveyReports"
 import { buildTraverseChain } from "../lib/traverseChain"
 import { parseRawCsv, pairsToCsv, readingsToCsv } from "../lib/rawCsv"
 import { checkTraverseClosure } from "../lib/traverseClosure"
@@ -38,7 +42,15 @@ const copy = {
     jxlChain: "Detected traverse chain",
     jxlChainClosed: "closed",
     jxlChainOpen: "open",
-    jxlClosureNote: "Traverse closure is not run from a field book yet. Use a raw traverse file for closure.",
+    jxlClosureNote: "For JXL closure, review the suggested station sequence, enter the final orientation point, and provide fixed XY control coordinates for both ends and orientation points. Fixed Z at start/end is required for vertical closure.",
+    verticalClosure: "Trigonometric height closure (unadjusted)",
+    verticalStart: "Start height (m)",
+    verticalKnownEnd: "Known end height (m)",
+    verticalComputedEnd: "Computed end height (m)",
+    verticalRise: "Measured height difference (m)",
+    verticalMisclosure: "Vertical misclosure (mm)",
+    verticalNote: "Calculated from slope distance, zenith, HI and target height. Not geometric levelling; verify refraction/curvature, instrument setup and reciprocal observations as required by your project.",
+    downloadPdf: "Download PDF report",
     csvHint:
       "CSV columns: setup, target, hz, vz, sd, hi, ht (required); face, ppm (optional). Angles in gon, distances in metres. Comma or semicolon separated.",
     downloadReadings: "Download readings (CSV)",
@@ -118,7 +130,15 @@ const copy = {
     jxlChain: "Algılanan poligon zinciri",
     jxlChainClosed: "kapalı",
     jxlChainOpen: "açık",
-    jxlClosureNote: "Saha defterinden poligon kapanış kontrolü henüz yapılmıyor. Kapanış için ham poligon dosyasını kullanın.",
+    jxlClosureNote: "JXL kapanması için önerilen istasyon sırasını kontrol edin, son yöneltme noktasını girin ve başlangıç/bitiş ile yöneltme noktalarının sabit XY koordinatlarını tanımlayın. Düşey kapanma için başlangıç ve bitiş kotları sabit (Z) olmalıdır.",
+    verticalClosure: "Trigonometrik düşey kapanma (dengeleme öncesi)",
+    verticalStart: "Başlangıç kotu (m)",
+    verticalKnownEnd: "Bilinen bitiş kotu (m)",
+    verticalComputedEnd: "Hesaplanan bitiş kotu (m)",
+    verticalRise: "Ölçülen kot farkı (m)",
+    verticalMisclosure: "Düşey kapanma hatası (mm)",
+    verticalNote: "Eğik mesafe, zenit açısı, alet ve hedef yüksekliğinden hesaplanır. Geometrik nivelman değildir; gerekliyse refraksiyon, eğrilik ve karşılıklı ölçü düzeltmelerini kontrol edin.",
+    downloadPdf: "PDF raporu indir",
     csvHint:
       "CSV sütunları: setup (istasyon), target (hedef), hz, vz, sd, hi, ht zorunlu; face (yüz), ppm isteğe bağlı. Açılar gon, mesafeler metre. Virgül veya noktalı virgülle ayrılabilir.",
     downloadReadings: "Ölçüleri indir (CSV)",
@@ -213,6 +233,7 @@ type Run = {
   built: BuiltNetwork
   adjustment: NetworkAdjustmentResult
   closure: TraverseClosureResult | null
+  heightClosure: TrigHeightClosure | null
   closureError: string | null
 }
 
@@ -261,6 +282,7 @@ export default function NetworkAdjustment() {
   const [endBacksight, setEndBacksight] = useState("")
 
   const [run, setRun] = useState<Run | null>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const applyPreset = (key: string) => {
@@ -281,8 +303,13 @@ export default function NetworkAdjustment() {
     const text = await file.text()
     if (/\.(jxl|xml)$/i.test(file.name)) {
       try {
-        setJobXml(parseJobXmlObservations(text))
+        const parsed = parseJobXmlObservations(text)
+        setJobXml(parsed)
         setRawText("")
+        const chain = buildTraverseChain(parsed, { includeDeleted: false })
+        setSequenceText(chain.stations.map((station) => station.name).join(", "))
+        setStartBacksight(chain.stations[0]?.backsight ?? "")
+        setEndBacksight("")
       } catch (failure) {
         setJobXml(null)
         setError(failure instanceof Error ? failure.message : String(failure))
@@ -318,7 +345,31 @@ export default function NetworkAdjustment() {
           pairs: [],
           qc: { job: fileName, readingCount: 0, headerCorrectionAnomalies: [], skippedLines: [], unpairedFaces: [] },
         }
-        setRun({ raw: emptyRaw, built, adjustment, closure: null, closureError: null })
+        let closure: TraverseClosureResult | null = null
+        let heightClosure: TrigHeightClosure | null = null
+        let closureError: string | null = null
+        if (traverseEnabled) {
+          try {
+            const sequence = sequenceText.split(",").map((name) => name.trim()).filter(Boolean)
+            const builtClosure = buildJobXmlClosureInput(
+              jobXml,
+              { aliases, excludedSetups, coordinates, precision },
+              {
+                sequence,
+                startBacksight: startBacksight.trim(),
+                endBacksight: endBacksight.trim(),
+                angleStdDevSec: angleSigma,
+                minimumPrecisionDenominator: minimumPrecision,
+              },
+            )
+            const checked = checkTraverseClosure(builtClosure.input)
+            closure = { ...checked, warnings: [...checked.warnings, ...builtClosure.warnings] }
+            heightClosure = builtClosure.heightClosure
+          } catch (failure) {
+            closureError = failure instanceof Error ? failure.message : String(failure)
+          }
+        }
+        setRun({ raw: emptyRaw, built, adjustment, closure, heightClosure, closureError })
         return
       }
       if (!rawText.trim()) throw new Error("Load or paste a raw traverse file first.")
@@ -346,9 +397,65 @@ export default function NetworkAdjustment() {
           closureError = closureFailure instanceof Error ? closureFailure.message : String(closureFailure)
         }
       }
-      setRun({ raw, built, adjustment, closure, closureError })
+      setRun({ raw, built, adjustment, closure, heightClosure: null, closureError })
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
+    }
+  }
+
+  const downloadPdf = async () => {
+    if (!run || pdfBusy) return
+    setPdfBusy(true)
+    setError(null)
+    try {
+      const { adjustment, closure, heightClosure } = run
+      const report: SurveyReport = {
+        title: t.title,
+        project: fileName || "Network adjustment",
+        createdAt: new Date().toISOString(),
+        metadata: [
+          ["Source", fileName || "Pasted raw observations"],
+          [t.observations, adjustment.observationCount],
+          [t.unknowns, adjustment.unknownCount],
+          [t.dof, adjustment.degreesOfFreedom],
+        ],
+        summary: [
+          [t.sigma0, adjustment.sigma0],
+          [t.flagged, adjustment.flaggedCount],
+          ...(closure ? [
+            [t.linear, closure.linearMisclosure],
+            [t.perimeter, closure.perimeter],
+            [t.angular, closure.angularMisclosureSec],
+            [t.tolerance, closure.angularToleranceSec],
+          ] as Array<[string, number]> : []),
+          ...(heightClosure ? [
+            [t.verticalStart, heightClosure.startElevationM],
+            [t.verticalKnownEnd, heightClosure.knownEndElevationM],
+            [t.verticalComputedEnd, heightClosure.computedEndElevationM],
+            [t.verticalRise, heightClosure.totalRiseM],
+            [t.verticalMisclosure, heightClosure.misclosureM * 1000],
+          ] as Array<[string, number]> : []),
+        ],
+        columns: [t.point, t.easting, t.northing, t.elevation, t.sE, t.sN, t.sH],
+        rows: adjustment.points.map((point) => [
+          point.id, point.easting, point.northing, point.elevation,
+          point.eastingStdDev, point.northingStdDev, point.elevationStdDev,
+        ]),
+        notes: [
+          t.disclaimer,
+          ...(heightClosure ? [t.verticalNote] : []),
+          ...adjustment.warnings,
+          ...(closure?.warnings ?? []),
+          ...(run.closureError ? [run.closureError] : []),
+          ...run.built.dropped,
+        ],
+      }
+      const pdf = await createReportPdf(report)
+      downloadReportBlob(pdf, "application/pdf", safeReportName(fileName || "network-adjustment") + "-adjustment.pdf")
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setPdfBusy(false)
     }
   }
 
@@ -553,6 +660,11 @@ export default function NetworkAdjustment() {
           </button>
         )}
         {run && (
+          <button type="button" disabled={pdfBusy} onClick={() => { void downloadPdf() }} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm hover:border-cyan-300/50 disabled:opacity-40">
+            <FileText size={16} /> {t.downloadPdf}
+          </button>
+        )}
+        {run && (
           <>
             <button type="button" onClick={downloadReadings} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm hover:border-cyan-300/50">
               <Download size={16} /> {t.downloadReadings}
@@ -598,7 +710,7 @@ function JobXmlChain({ data, t }: { data: ObservationData; t: Copy }) {
 }
 
 function Results({ run, t, card }: { run: Run; t: Copy; card: string }) {
-  const { adjustment, closure, closureError, built, raw } = run
+  const { adjustment, closure, heightClosure, closureError, built, raw } = run
   const warnings = [...adjustment.warnings, ...(closure?.warnings ?? [])]
   const shownObservations = adjustment.observations.slice(0, 300)
   const dropped = built.dropped
@@ -648,6 +760,20 @@ function Results({ run, t, card }: { run: Run; t: Copy; card: string }) {
             <div><dt className="text-slate-400">{t.angular}</dt><dd className="mt-1 font-mono">{formatNumber(closure.angularMisclosureSec, 1)} ({closure.angularWarning || closure.precisionWarning ? t.warn : t.ok})</dd></div>
             <div><dt className="text-slate-400">{t.tolerance}</dt><dd className="mt-1 font-mono">{formatNumber(closure.angularToleranceSec, 1)}</dd></div>
           </dl>
+        </section>
+      )}
+
+      {heightClosure && (
+        <section className={card}>
+          <h2 className="text-lg font-semibold">{t.verticalClosure}</h2>
+          <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div><dt className="text-slate-400">{t.verticalStart}</dt><dd className="mt-1 font-mono">{formatNumber(heightClosure.startElevationM, 4)}</dd></div>
+            <div><dt className="text-slate-400">{t.verticalKnownEnd}</dt><dd className="mt-1 font-mono">{formatNumber(heightClosure.knownEndElevationM, 4)}</dd></div>
+            <div><dt className="text-slate-400">{t.verticalComputedEnd}</dt><dd className="mt-1 font-mono">{formatNumber(heightClosure.computedEndElevationM, 4)}</dd></div>
+            <div><dt className="text-slate-400">{t.verticalRise}</dt><dd className="mt-1 font-mono">{formatNumber(heightClosure.totalRiseM, 4)}</dd></div>
+            <div><dt className="text-slate-400">{t.verticalMisclosure}</dt><dd className="mt-1 font-mono">{formatNumber(heightClosure.misclosureM * 1000, 2)}</dd></div>
+          </dl>
+          <p className="mt-4 text-xs leading-5 text-slate-400">{t.verticalNote}</p>
         </section>
       )}
 

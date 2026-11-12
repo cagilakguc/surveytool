@@ -1,0 +1,32 @@
+name: Validate JXL traverse closure
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/lib/jobXmlTraverseClosure.ts"
+      - "src/lib/networkFromJobXml.ts"
+      - "src/lib/traverseClosure.ts"
+      - "src/pages/NetworkAdjustment.tsx"
+      - "scripts/validate-jxl-traverse-closure.mjs"
+      - "scripts/validate-network-jxl.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/validate-jxl-closure.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:jxl-closure
+      - run: npm run test:network-jxl
