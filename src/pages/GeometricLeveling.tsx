@@ -29,8 +29,14 @@ const copy = {
     language: "Language", upload: "Load levelling CSV", example: "Load example CSV",
     csvLabel: "Levelling readings (CSV)", csvHint: "Columns: setup, point, sight, reading_m, distance_m. One setup block must begin with BS, contain optional IS, and end with FS; the next BS must be at the previous FS turning point.",
     project: "Project / report name", start: "Known start RL (m)", end: "Known end RL (m, optional)", endHint: "Leave empty for an open line. If the last FS point has the same name as the first BS, a closed-loop check uses the start RL automatically.",
-    method: "Distribute closure correction", auto: "Automatic: sight distances if complete, otherwise per setup",
-    distance: "By BS+FS sight distances", setups: "Equally per setup",
+    method: "Adjustment method — choose one",
+    setups: "1. By number of instrument setups",
+    distance: "2. By measured line distance",
+    setupsHelp: "Same correction per setup. No sight distances required for correction distribution.",
+    distanceHelp: "Proportional correction using each setup's BS + FS sight distances (all are required).",
+    correctionTable: "Closure correction distribution",
+    legFrom: "From", legTo: "To", legRise: "Measured rise (m)", legLength: "Setup distance (m)", legCumulative: "Cumulative correction (mm)",
+    actualMethod: "Selected adjustment method",
     tolerance: "Tolerance coefficient (mm/√km)", toleranceHint: "Project-defined acceptance criterion, not a universal standard. Tolerance can only be assessed if every BS and FS sight distance is supplied.",
     calculate: "Calculate levelling", result: "Levelling results", point: "Point", setup: "Setup", sight: "Sight", reading: "Reading (m)", distanceLabel: "Sight distance (m)", hi: "HI (m)", raw: "Unadjusted RL (m)", correction: "Correction (m)", adjusted: "Adjusted RL (m)",
     stations: "Instrument setups", length: "Measured line length", first: "Start benchmark", last: "End benchmark",
@@ -45,8 +51,14 @@ const copy = {
     language: "Dil", upload: "Nivelman CSV yükle", example: "Örnek CSV yükle",
     csvLabel: "Nivelman okumaları (CSV)", csvHint: "Sütunlar: setup, point, sight, reading_m, distance_m. Her alet kurulumunda önce BS, ardından isteğe bağlı IS ve en son FS olmalıdır. Sonraki BS, önceki FS dönüm noktasına yapılmalıdır.",
     project: "Proje / rapor adı", start: "Bilinen başlangıç kotu (m)", end: "Bilinen bitiş kotu (m, isteğe bağlı)", endHint: "Dayalı olmayan açık nivelman için boş bırakın. Son FS ile ilk BS aynı noktaysa başlangıç kotuyla kapalı devre kontrolü yapılır.",
-    method: "Kapanma düzeltmesini dağıt", auto: "Otomatik: mesafeler tam ise mesafeye, değilse kurulum sayısına göre",
-    distance: "BS+FS görüş mesafelerine göre", setups: "Her kuruluma eşit",
+    method: "Dengeleme yöntemi — birini seçin",
+    setups: "1. Oturum (alet kurulumu) sayısına göre",
+    distance: "2. Ölçülen hat mesafesine göre",
+    setupsHelp: "Her oturuma eşit düzeltme. Dağıtım için görüş mesafeleri gerekli değildir.",
+    distanceHelp: "Her oturumdaki BS + FS görüş mesafeleri oranında düzeltme (tüm mesafeler zorunlu).",
+    correctionTable: "Kapanma düzeltmesi dağıtımı",
+    legFrom: "Başlangıç", legTo: "Bitiş", legRise: "Ölçülen kot farkı (m)", legLength: "Oturum mesafesi (m)", legCumulative: "Kümülatif düzeltme (mm)",
+    actualMethod: "Seçilen dengeleme yöntemi",
     tolerance: "Tolerans katsayısı (mm/√km)", toleranceHint: "Bu katsayı projeye özgüdür; evrensel standart değildir. Tolerans kontrolü için tüm BS ve FS görüş mesafeleri girilmelidir.",
     calculate: "Nivelmanı hesapla", result: "Nivelman sonuçları", point: "Nokta", setup: "Kurulum", sight: "Okuma", reading: "Mira (m)", distanceLabel: "Görüş mesafesi (m)", hi: "Alet ufku (m)", raw: "Düzeltilmemiş kot (m)", correction: "Düzeltme (m)", adjusted: "Düzeltilmiş kot (m)",
     stations: "Alet kurulumu", length: "Ölçülen hat uzunluğu", first: "Başlangıç röperi", last: "Bitiş röperi",
@@ -70,7 +82,7 @@ export default function GeometricLeveling() {
   const [project, setProject] = useState("Geometric levelling")
   const [startRL, setStartRL] = useState("100.000")
   const [endRL, setEndRL] = useState("")
-  const [method, setMethod] = useState<LevelMethod>("auto")
+  const [method, setMethod] = useState<LevelMethod>("setups")
   const [coefficient, setCoefficient] = useState("12")
   const [result, setResult] = useState<LevelResult | null>(null)
   const [error, setError] = useState("")
@@ -208,10 +220,26 @@ export default function GeometricLeveling() {
               <input type="number" step="0.001" value={endRL} onChange={(event) => { setEndRL(event.target.value); setResult(null) }} className={inputClass} /></div>
           </div>
           <p className="mt-2 text-xs text-slate-400">{t.endHint}</p>
-          <label className={label + " mt-5"}>{t.method}</label>
-          <select value={method} onChange={(event) => { setMethod(event.target.value as LevelMethod); setResult(null) }} className={inputClass}>
-            <option value="auto">{t.auto}</option><option value="distance">{t.distance}</option><option value="setups">{t.setups}</option>
-          </select>
+          <fieldset className="mt-5">
+            <legend className={label}>{t.method}</legend>
+            <div className="mt-2 grid gap-3">
+              {([
+                { key: "setups", name: t.setups, help: t.setupsHelp },
+                { key: "distance", name: t.distance, help: t.distanceHelp },
+              ] as const).map((choice) => (
+                <button key={choice.key} type="button"
+                  aria-pressed={method === choice.key}
+                  onClick={() => { setMethod(choice.key); setResult(null); setError("") }}
+                  className={"rounded-xl border p-3 text-left transition " +
+                    (method === choice.key
+                      ? "border-cyan-300 bg-cyan-400/10 text-cyan-100"
+                      : "border-white/15 bg-slate-900 text-slate-300 hover:border-cyan-300/50")}>
+                  <span className="block text-sm font-semibold">{choice.name}</span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-400">{choice.help}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <div className="mt-5"><label className={label}>{t.tolerance}</label>
             <input type="number" min="0.01" step="0.5" value={coefficient} onChange={(event) => { setCoefficient(event.target.value); setResult(null) }} className={inputClass} /></div>
           <p className="mt-2 text-xs leading-5 text-slate-400">{t.toleranceHint}</p>
@@ -228,6 +256,7 @@ export default function GeometricLeveling() {
               <button type="button" onClick={() => { void savePdf() }} disabled={exporting} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm hover:border-cyan-300 disabled:opacity-40"><FileText size={16} /> {t.pdf}</button>
             </div>
           </div>
+          <p className="text-sm text-cyan-200">{t.actualMethod}: <strong>{result.methodUsed === "distance" ? t.distance : t.setups}</strong></p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               [t.stations, String(result.legs.length)],
@@ -254,6 +283,28 @@ export default function GeometricLeveling() {
                     <td className="px-2 py-2 font-mono">{number(row.rawElevationM)}</td>
                     <td className="px-2 py-2 font-mono">{number(row.correctionM, 5)}</td>
                     <td className="px-2 py-2 font-mono">{number(row.adjustedElevationM)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+          <div className={card}>
+            <h3 className="font-semibold">{t.correctionTable}</h3>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="text-slate-400"><tr>
+                  {[t.setup, t.legFrom, t.legTo, t.legLength, t.legRise, t.legCumulative, t.adjusted].map((header) =>
+                    <th key={header} className="whitespace-nowrap px-2 py-2">{header}</th>)}
+                </tr></thead>
+                <tbody>{result.legs.map((leg) => (
+                  <tr key={leg.setup} className="border-t border-white/5">
+                    <td className="px-2 py-2 font-mono">{leg.setup}</td>
+                    <td className="px-2 py-2 font-mono">{leg.from}</td>
+                    <td className="px-2 py-2 font-mono">{leg.to}</td>
+                    <td className="px-2 py-2 font-mono">{number(leg.distanceM, 2)}</td>
+                    <td className="px-2 py-2 font-mono">{number(leg.deltaHeightM, 4)}</td>
+                    <td className="px-2 py-2 font-mono">{number(leg.correctionM * 1000, 2)}</td>
+                    <td className="px-2 py-2 font-mono">{number(leg.adjustedToElevationM, 4)}</td>
                   </tr>
                 ))}</tbody>
               </table>
