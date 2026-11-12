@@ -155,4 +155,37 @@ assert.throws(() => buildJobXmlClosureInput(data, options, {
   ...closure, endBacksight: "E",
 }), /orientation point must differ/)
 
+// 9. Trigonometric height closure uses slope, zenith and instrument/target heights.
+assert.ok(built.heightClosure, "start/end fixed heights allow height closure")
+assert.equal(built.heightClosure.legs.length, 3)
+assert.ok(Math.abs(built.heightClosure.totalRiseM - (B.elevation - A.elevation)) < 1e-8)
+assert.ok(Math.abs(built.heightClosure.misclosureM) < 1e-8)
+
+// 10. End control Z offset is detected as vertical misclosure.
+const raisedControl = buildJobXmlClosureInput(data, {
+  ...options,
+  coordinates: control.map((point) => point.id === "B" ? { ...point, elevation: point.elevation + .02 } : point),
+}, closure)
+assert.ok(Math.abs(raisedControl.heightClosure.misclosureM + .02) < 1e-8)
+
+// 11. Starting and ending height control must be explicitly fixed, not approximate.
+const missingFixedHeight = buildJobXmlClosureInput(data, {
+  ...options,
+  coordinates: control.map((point) => point.id === "B" ? { ...point, fixedHeight: false } : point),
+}, closure)
+assert.equal(missingFixedHeight.heightClosure, null)
+assert.match(missingFixedHeight.warnings[0], /fixed Z control/)
+
+// 12. A deliberate +10 mm change in HI propagates into the height misclosure.
+const hiShift = {
+  ...data,
+  observations: data.observations.map((obs) =>
+    obs.setupName === "A" && obs.target === "D"
+      ? { ...obs, instrumentHeightM: obs.instrumentHeightM + .01 }
+      : obs,
+  ),
+}
+const shiftedHeight = buildJobXmlClosureInput(hiShift, options, closure)
+assert.ok(Math.abs(shiftedHeight.heightClosure.misclosureM - .01) < 1e-8)
+
 console.log("validate-jxl-traverse-closure: all checks passed")
