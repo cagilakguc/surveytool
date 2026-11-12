@@ -35,7 +35,8 @@
     "test:observation-csv": "node --import tsx scripts/validate-observation-csv.mjs",
     "test:jxl-observations": "node --import tsx scripts/validate-jobxml-observations.mjs",
     "test:traverse-chain": "node --import tsx scripts/validate-traverse-chain.mjs",
-    "test:network-jxl": "node --import tsx scripts/validate-network-jxl.mjs"
+    "test:network-jxl": "node --import tsx scripts/validate-network-jxl.mjs",
+    "test:leveling": "node --import tsx scripts/validate-geometric-leveling.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

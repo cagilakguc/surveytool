@@ -25,6 +25,7 @@ const ContourTerrain = lazy(() => import("./pages/ContourTerrain"))
 const JobXmlToDxf = lazy(() => import("./pages/JobXmlToDxf"))
 const DbxToDxf = lazy(() => import("./pages/DbxToDxf"))
 const NetworkAdjustment = lazy(() => import("./pages/NetworkAdjustment"))
+const GeometricLeveling = lazy(() => import("./pages/GeometricLeveling"))
 const ObservationPlan = lazy(() => import("./pages/ObservationPlan"))
 
 function App() {
@@ -51,6 +52,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/tools/network-adjustment" element={<Suspense fallback={<p role="status" className="relative z-10 px-6 py-24 text-center text-slate-400">Loading network adjustment…</p>}><NetworkAdjustment /></Suspense>} />
+            <Route path="/tools/geometric-leveling" element={<Suspense fallback={<p role="status" className="relative z-10 px-6 py-24 text-center text-slate-400">Loading geometric levelling…</p>}><GeometricLeveling /></Suspense>} />
             <Route path="/tools/csv-to-dxf" element={<CsvToDxf />} />
             <Route
               path="/tools/coordinate-converter"
