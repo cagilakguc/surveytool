@@ -1,0 +1,31 @@
+name: Validate geometric levelling
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/lib/geometricLeveling.ts"
+      - "src/pages/GeometricLeveling.tsx"
+      - "src/App.tsx"
+      - "src/components/Features.tsx"
+      - "scripts/validate-geometric-leveling.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/validate-leveling.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:leveling
+      - run: npm run build
