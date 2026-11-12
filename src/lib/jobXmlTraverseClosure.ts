@@ -22,6 +22,8 @@ type ReducedReading = {
   hzDeg: number
   zenithDeg: number
   slopeM: number
+  instrumentHeightM: number
+  targetHeightM: number
 }
 
 const RAD = Math.PI / 180
@@ -40,10 +42,32 @@ function reduceReadings(readings: JobObservation[]): ReducedReading {
     hzDeg: circularMeanDeg(hz),
     zenithDeg: mean(zenith),
     slopeM: mean(readings.map((reading) => reading.slopeM)),
+    instrumentHeightM: mean(readings.map((reading) => reading.instrumentHeightM)),
+    targetHeightM: mean(readings.map((reading) => reading.targetHeightM)),
   }
 }
 
+export type TrigHeightLeg = {
+  from: string
+  to: string
+  slopeM: number
+  zenithDeg: number
+  instrumentHeightM: number
+  targetHeightM: number
+  deltaHeightM: number
+}
+
+export type TrigHeightClosure = {
+  startElevationM: number
+  knownEndElevationM: number
+  computedEndElevationM: number
+  misclosureM: number
+  totalRiseM: number
+  legs: TrigHeightLeg[]
+}
+
 export type JobXmlClosureBuild = {
+  heightClosure: TrigHeightClosure | null
   input: TraverseClosureInput
   /** Ambiguous repeated occupations selected deterministically, not silently. */
   warnings: string[]
@@ -148,10 +172,16 @@ export function buildJobXmlClosureInput(
     return {
       angleDeg: positiveDegrees(forward.hzDeg - back.hzDeg),
       horizontalDistance: forward.slopeM * Math.sin(forward.zenithDeg * RAD),
+      slopeM: forward.slopeM,
+      zenithDeg: forward.zenithDeg,
+      instrumentHeightM: forward.instrumentHeightM,
+      targetHeightM: forward.targetHeightM,
+      deltaHeightM: forward.instrumentHeightM + forward.slopeM * Math.cos(forward.zenithDeg * RAD) - forward.targetHeightM,
     }
   }
 
   const stations: TraverseStation[] = []
+  const heightLegs: TrigHeightLeg[] = []
   for (let index = 0; index < names.length - 1; index++) {
     const station = names[index]
     const previous = index === 0 ? startBack : names[index - 1]
@@ -161,10 +191,34 @@ export function buildJobXmlClosureInput(
       throw new Error("Horizontal traverse distance must be positive at " + station)
     }
     stations.push({ angleDeg: observation.angleDeg, distance: observation.horizontalDistance })
+    heightLegs.push({
+      from: station, to: next,
+      slopeM: observation.slopeM,
+      zenithDeg: observation.zenithDeg,
+      instrumentHeightM: observation.instrumentHeightM,
+      targetHeightM: observation.targetHeightM,
+      deltaHeightM: observation.deltaHeightM,
+    })
   }
   // The final station is independent orientation control: back to the previous
   // traverse station, forward to the known end orientation point.
   const endAngle = angleAt(names[names.length - 1], names[names.length - 2], endBack)
+  const startControl = coordinates.get(names[0])
+  const endControl = coordinates.get(names[names.length - 1])
+  let heightClosure: TrigHeightClosure | null = null
+  if (startControl?.fixedHeight && endControl?.fixedHeight) {
+    const totalRiseM = heightLegs.reduce((sum, leg) => sum + leg.deltaHeightM, 0)
+    const computedEndElevationM = startControl.elevation + totalRiseM
+    heightClosure = {
+      startElevationM: startControl.elevation,
+      knownEndElevationM: endControl.elevation,
+      computedEndElevationM, totalRiseM,
+      misclosureM: computedEndElevationM - endControl.elevation,
+      legs: heightLegs,
+    }
+  } else {
+    warnings.push("Trigonometric height closure unavailable: enter fixed Z control for both start and end stations. Approximate JXL elevations are not accepted as control.")
+  }
   return {
     input: {
       start,
@@ -176,6 +230,7 @@ export function buildJobXmlClosureInput(
       angleStdDevSec: closure.angleStdDevSec,
       minimumPrecisionDenominator: closure.minimumPrecisionDenominator,
     },
+    heightClosure,
     warnings,
   }
 }
