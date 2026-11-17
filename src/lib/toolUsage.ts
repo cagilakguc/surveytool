@@ -1,6 +1,7 @@
 export const usageTools = [
   "landxml",
   "csv_dxf",
+  "hatch_dxf",
   "jxl_dxf",
   "dbx_dxf",
   "coordinates",
