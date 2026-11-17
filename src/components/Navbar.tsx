@@ -54,6 +54,7 @@ export default function Navbar() {
           >
             CSV / TXT to DXF
           </Link>
+          <Link className="transition hover:text-white" to="/tools/dxf-hatch-converter">Hatch / Line Markings</Link>
           <Link
             className="transition hover:text-white"
             to="/tools/landxml-viewer"
