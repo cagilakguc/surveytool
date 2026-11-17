@@ -26,6 +26,7 @@ const JobXmlToDxf = lazy(() => import("./pages/JobXmlToDxf"))
 const DbxToDxf = lazy(() => import("./pages/DbxToDxf"))
 const NetworkAdjustment = lazy(() => import("./pages/NetworkAdjustment"))
 const ObservationPlan = lazy(() => import("./pages/ObservationPlan"))
+const InstallApp = lazy(() => import("./pages/InstallApp"))
 const DxfHatchConverter = lazy(() => import("./pages/DxfHatchConverter"))
 
 function App() {
@@ -48,6 +49,7 @@ function App() {
             <Route path="/tools/as-built-check" element={<Suspense fallback={<p className="p-12">Loading design check…</p>}><AsBuiltCheck /></Suspense>} />
             <Route path="/projects" element={<Suspense fallback={<p className="p-12">Loading projects…</p>}><LocalProjects /></Suspense>} />
             <Route path="/help" element={<Help />} />
+            <Route path="/app" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading app install guide…</p>}><InstallApp /></Suspense>} />
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/auth" element={<Auth />} />
