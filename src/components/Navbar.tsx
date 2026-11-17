@@ -45,9 +45,9 @@ export default function Navbar() {
           aria-label="Primary navigation"
           className="hidden items-center gap-5 text-sm text-slate-300 lg:flex"
         >
-          <a className="transition hover:text-white" href="#tools">
+          <Link className="transition hover:text-white" to="/#tools">
             Tools
-          </a>
+          </Link>
           <Link
             className="transition hover:text-white"
             to="/tools/csv-to-dxf"
@@ -68,6 +68,7 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2">
         {installPrompt && <button type="button" onClick={() => void installApp()} className="rounded-full border border-cyan-300/50 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10">Install App</button>}
+        <Link to="/app" className="rounded-full border border-cyan-300/40 px-4 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10 sm:text-sm">Get App</Link>
         <Link
           to="/dashboard"
           className="rounded-full bg-cyan-400 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:scale-105 hover:bg-cyan-300 sm:px-6"
