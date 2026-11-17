@@ -25,6 +25,8 @@ export default function Hero() {
           Start with CSV / TXT to DXF
         </Link>
 
+        <Link to="/app" className="rounded-full border border-cyan-400/50 px-8 py-3 font-semibold text-cyan-200 transition hover:bg-cyan-300/10">Get the SurveyTool App</Link>
+
         <a
           href="#tools"
           className="rounded-full border border-white/15 px-8 py-3 font-semibold transition hover:bg-white/10"
