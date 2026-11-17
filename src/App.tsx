@@ -26,6 +26,7 @@ const JobXmlToDxf = lazy(() => import("./pages/JobXmlToDxf"))
 const DbxToDxf = lazy(() => import("./pages/DbxToDxf"))
 const NetworkAdjustment = lazy(() => import("./pages/NetworkAdjustment"))
 const ObservationPlan = lazy(() => import("./pages/ObservationPlan"))
+const DxfHatchConverter = lazy(() => import("./pages/DxfHatchConverter"))
 
 function App() {
   return (
@@ -52,6 +53,7 @@ function App() {
             <Route path="/auth" element={<Auth />} />
             <Route path="/tools/network-adjustment" element={<Suspense fallback={<p role="status" className="relative z-10 px-6 py-24 text-center text-slate-400">Loading network adjustment…</p>}><NetworkAdjustment /></Suspense>} />
             <Route path="/tools/csv-to-dxf" element={<CsvToDxf />} />
+            <Route path="/tools/dxf-hatch-converter" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading hatch converter…</p>}><DxfHatchConverter /></Suspense>} />
             <Route
               path="/tools/coordinate-converter"
               element={<CoordinateConverter />}
