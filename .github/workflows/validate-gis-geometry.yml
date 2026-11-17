@@ -19,6 +19,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run test:hatch
       - run: npm run test:maps
       - run: npm run test:crs
       - run: npm run test:datum
