@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "predev": "node scripts/build-crs-catalogue.mjs",
     "prebuild": "node scripts/build-crs-catalogue.mjs",
+    "test:hatch": "node --import tsx scripts/validate-dxf-hatch-converter.mjs",
     "test:maps": "node --import tsx scripts/validate-survey-maps.mjs",
     "test:crs": "node --import tsx scripts/validate-crs-selection.mjs",
     "test:datum": "node --import tsx scripts/validate-datum-operations.mjs",
