@@ -55,7 +55,7 @@ function normalizeSweep(start: number, end: number, ccw: boolean, turn: number) 
 function sampleArc(center: Point, radius: number, startDeg: number, endDeg: number, ccw: boolean): Loop {
   if (radius <= 0) return []
   const sweep = normalizeSweep(startDeg, endDeg, ccw, 360)
-  const steps = Math.max(2, Math.min(250, Math.ceil(Math.abs(sweep) / 6), Math.ceil(Math.abs(radians(sweep) * radius) / 0.12)))
+  const steps = Math.min(250, Math.max(2, Math.ceil(Math.abs(sweep) / 6), Math.ceil(Math.abs(radians(sweep) * radius) / 0.12)))
   return Array.from({ length: steps + 1 }, (_, index) => {
     const angle = radians(startDeg + sweep * index / steps)
     return point(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius)
