@@ -8,6 +8,7 @@ Browser-based tools for survey file conversion and civil engineering checks. Bui
 - LandXML viewer with surface, alignment and point previews.
 - Global street and aerial backgrounds in LandXML Viewer and Surface Compare, with searchable EPSG selection and map preferences saved per project on the current device.
 - Cross-sections, surface comparison and pavement conformance.
+- Differential levelling adjustment from backsight and foresight readings, distributing closure by setup count or route distance. Manual entry or CSV/TXT import, with PDF/CSV results.
 - Global coordinate and point-file conversion with country-first selection and direct EPSG search; CSV, TXT, DXF, KML and GeoJSON exports.
 - Global GIS export to 3D Shapefile ZIP and GeoPackage, including separate point, line and polygon layers and searchable input/output EPSG coordinate systems.
 - Account and project workspace, with Supabase and Stripe integration.
@@ -19,6 +20,7 @@ npm ci
 npm run dev
 npm run build
 npm run lint
+npm run test:levelling
 ```
 
 Public Supabase configuration is described in `.env.example`. Billing secrets belong in the deployment environment.
