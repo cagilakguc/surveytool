@@ -10,6 +10,7 @@ import {
   Database,
   MapPin,
   Sigma,
+  Ruler,
   Shapes,
 } from "lucide-react"
 
@@ -29,6 +30,7 @@ const features: Feature[] = [
   { icon: Mountain, title: "Contours to 3D Terrain", description: "Build a terrain surface from reviewed DXF contours, inspect it in 3D and export LandXML or a CAD TIN.", to: "/tools/contours-to-terrain" },
   { icon: ClipboardList, title: "As-built vs Design", description: "Check every measured point against a design TIN, apply tolerances and export PDF, Excel or CSV reports.", to: "/tools/as-built-check" },
   { icon: Sigma, title: "Network Adjustment (3D)", description: "Adjust a total-station traverse from a Leica or Trimble raw file with heights, closure checks and CSV export.", to: "/tools/network-adjustment" },
+  { icon: Ruler, title: "Levelling Adjustment", description: "Calculate differential levelling from backsights and foresights. Distribute closure by setup count or route distance and export the adjusted levels.", to: "/tools/levelling" },
   { icon: MapPin, title: "Observation Plan", description: "Plan view of a total-station job from an all-observations CSV, drawn with the coordinates held at the time of each measurement.", to: "/tools/observation-plan" },
   {
     icon: FileText,

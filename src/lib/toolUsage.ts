@@ -11,6 +11,7 @@ export const usageTools = [
   "sections",
   "surface_compare",
   "pavement",
+  "levelling",
 ] as const;
 export const usageActions = [
   "import_complete",
