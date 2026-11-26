@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto"
 import type { VercelRequest, VercelResponse } from "@vercel/node"
 import { createClient } from "@supabase/supabase-js"
-import { parseFeedback } from "../src/lib/feedback.js"
+import { customEnquiryTopic, parseFeedback } from "../src/lib/feedback.js"
 
 const bucketName = "site-feedback"
 const submissions = new Map<string, { count: number; until: number }>()
@@ -24,7 +24,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let feedback
   try { feedback = parseFeedback(req.body) }
   catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : "Please check your feedback." }) }
-  if (!url || !key) return res.status(503).json({ error: "Private feedback is temporarily unavailable. You can use the public GitHub feedback option below." })
+  const customEnquiry = feedback.topic === customEnquiryTopic
+  if (!url || !key) return res.status(503).json({ error: customEnquiry
+    ? "Private enquiries are temporarily unavailable. Please try again later."
+    : "Private feedback is temporarily unavailable. You can use the public GitHub feedback option below." })
 
   const now = Date.now()
   const ip = String(req.headers["x-vercel-forwarded-for"] || req.headers["x-forwarded-for"] || "unknown").split(",")[0]
@@ -64,6 +67,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (saved.error) throw saved.error
     return res.status(201).json({ received: true, id })
   } catch {
-    return res.status(503).json({ error: "Your feedback could not be saved. Please try again, or use the public GitHub option below." })
+    return res.status(503).json({ error: customEnquiry
+      ? "Your enquiry could not be saved. Please try again."
+      : "Your feedback could not be saved. Please try again, or use the public GitHub option below." })
   }
 }
