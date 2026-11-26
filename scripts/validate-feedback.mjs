@@ -1,9 +1,13 @@
 import assert from "node:assert/strict"
 import handler from "../api/feedback.ts"
-import { feedbackIssueUrl, parseFeedback } from "../src/lib/feedback.ts"
+import { customEnquiryTopic, feedbackIssueUrl, parseFeedback } from "../src/lib/feedback.ts"
 
 const valid = { tone: "positive", topic: "GIS Export", message: "The line heights are preserved correctly.", email: "reader@example.com" }
+const enquiry = { ...valid, tone: "idea", topic: customEnquiryTopic }
 assert.deepEqual(parseFeedback(valid), valid)
+assert.deepEqual(parseFeedback(enquiry), enquiry)
+assert.throws(() => parseFeedback({ ...enquiry, email: "" }))
+assert.throws(() => feedbackIssueUrl(enquiry))
 for (const value of [null, [], {}, {...valid,tone:"unknown"}, {...valid,topic:"unknown"}, {...valid,message:"no"}, {...valid,message:"x".repeat(2001)}, {...valid,email:"invalid"}]) assert.throws(() => parseFeedback(value))
 assert.equal(parseFeedback({...valid,message:"  A useful tool  ",email:""}).message,"A useful tool")
 const issue = new URL(feedbackIssueUrl({...valid,message:"Levels & codes: <test>\nTürkçe feedback"}))
@@ -29,6 +33,9 @@ assert.equal((await request("POST",valid,{"content-type":"text/plain"})).code,41
 assert.equal((await request("POST",valid,{"content-length":"9000"})).code,413)
 assert.equal((await request("POST",{...valid,message:""})).code,400)
 assert.equal((await request("POST")).code,503,"Missing delivery configuration must never report success")
+const unavailableEnquiry = await request("POST", enquiry)
+assert.equal(unavailableEnquiry.code, 503)
+assert.doesNotMatch(unavailableEnquiry.body.error, /GitHub/i)
 
 process.env.SUPABASE_URL="https://feedback-test.supabase.co"
 process.env.SUPABASE_SECRET_KEY="test-service-key"
@@ -72,6 +79,9 @@ try {
   assert.equal(stored.topic,"GIS Export")
   assert.equal(stored.ip,undefined)
   assert.equal(stored.id,sent.body.id)
+  assert.equal((await request("POST", enquiry)).code, 201)
+  assert.equal(stored.topic, customEnquiryTopic)
+  assert.equal(stored.email, enquiry.email)
   publicBucket=true
   const before=uploads
   assert.equal((await request("POST")).code,503)

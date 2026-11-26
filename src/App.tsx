@@ -12,6 +12,7 @@ import CoordinateConverter from "./pages/CoordinateConverter"
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
 import Help from "./pages/Help"
+import CustomTools from "./pages/CustomTools"
 import HelpFeedbackButton from "./components/HelpFeedbackButton"
 import { AuthProvider } from "./context/AuthContext"
 import { OfflineNotice } from "./components/OfflineStatus"
@@ -50,6 +51,7 @@ function App() {
             <Route path="/tools/as-built-check" element={<Suspense fallback={<p className="p-12">Loading design check…</p>}><AsBuiltCheck /></Suspense>} />
             <Route path="/projects" element={<Suspense fallback={<p className="p-12">Loading projects…</p>}><LocalProjects /></Suspense>} />
             <Route path="/help" element={<Help />} />
+            <Route path="/custom-tools" element={<CustomTools />} />
             <Route path="/app" element={<Suspense fallback={<p role="status" className="p-12 text-cyan-200">Loading app install guide…</p>}><InstallApp /></Suspense>} />
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
